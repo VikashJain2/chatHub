@@ -31,6 +31,7 @@ const ChatApp = () => {
     { id: 2, text: 'Hi! How are you?', sender: 'user', timestamp: '09:42' },
     { id: 3, text: 'Ready for our meeting today? 🚀', sender: 'other', timestamp: '09:45' },
   ]);
+  // fadsfdasafdsasfdasfdasdfasfddsfas
   const [newMessage, setNewMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
