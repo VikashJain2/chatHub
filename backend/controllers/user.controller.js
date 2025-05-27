@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import db from "../config/db.js";
 import jwt from "jsonwebtoken";
-import {redisClient} from '../config/redis.js'
+import { redisClient } from "../config/redis.js";
 const generateToken = (userId) => {
   // console.log(userId);
 
@@ -15,7 +15,7 @@ const generateToken = (userId) => {
 
 const cacheUser = async (email, userId, password) => {
   const key = `user:email:${email}`;
-  const value = JSON.stringify({ id: userId, password });
+  const value = JSON.stringify({ id: userId, password, email });
 
   await redisClient.setEx(key, 86400, value);
 
@@ -55,11 +55,11 @@ const createUser = async (req, res) => {
       [firstName, lastName, email, hashPassword]
     );
 
-    await cacheUser(email, insertedUser.insertId, hashPassword)
+    await cacheUser(email, insertedUser.insertId, hashPassword);
 
     connection.release();
     const token = generateToken(insertedUser.insertId);
-     return res
+    return res
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -86,9 +86,9 @@ const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Both Fields Are Required" 
+      return res.status(400).json({
+        success: false,
+        message: "Both Fields Are Required",
       });
     }
 
@@ -97,21 +97,30 @@ const loginUser = async (req, res) => {
     // Check Redis cache first
     const cachedUser = await redisClient.get(`user:email:${email}`);
     if (cachedUser) {
-      console.log(`🟢 [Cache Hit] User data retrieved from Redis for email: ${email}`);
+      console.log(
+        `🟢 [Cache Hit] User data retrieved from Redis for email: ${email}`
+      );
       const parseUser = JSON.parse(cachedUser);
 
-      const isValidPassword = await bcrypt.compare(password, parseUser.password);
+      const isValidPassword = await bcrypt.compare(
+        password,
+        parseUser.password
+      );
       if (!isValidPassword) {
-        console.log(`🔴 [Auth Failed] Invalid password attempt for cached user: ${email}`);
-        return res.status(400).json({ 
-          success: false, 
-          message: "Invalid Credentials" 
+        console.log(
+          `🔴 [Auth Failed] Invalid password attempt for cached user: ${email}`
+        );
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Credentials",
         });
       }
 
-      console.log(`🟢 [Auth Success] Cached user login: ${email} (ID: ${parseUser.id})`);
+      console.log(
+        `🟢 [Auth Success] Cached user login: ${email} (ID: ${parseUser.id})`
+      );
       const token = generateToken(parseUser.id);
-      
+
       return res
         .cookie("token", token, {
           httpOnly: true,
@@ -119,9 +128,9 @@ const loginUser = async (req, res) => {
           sameSite: "strict",
         })
         .status(200)
-        .json({ 
-          success: true, 
-          message: "Login successful" 
+        .json({
+          success: true,
+          message: "Login successful",
         });
     }
 
@@ -133,23 +142,29 @@ const loginUser = async (req, res) => {
     );
 
     if (!user.length) {
-      console.log(`🔴 [Auth Failed] No user found in database for email: ${email}`);
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid Credentials" 
+      console.log(
+        `🔴 [Auth Failed] No user found in database for email: ${email}`
+      );
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Credentials",
       });
     }
 
     const checkPassword = await bcrypt.compare(password, user[0].password);
     if (!checkPassword) {
-      console.log(`🔴 [Auth Failed] Password mismatch for user: ${email} (ID: ${user[0].id})`);
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid Credentials" 
+      console.log(
+        `🔴 [Auth Failed] Password mismatch for user: ${email} (ID: ${user[0].id})`
+      );
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Credentials",
       });
     }
 
-    console.log(`🟢 [Auth Success] Database user login: ${email} (ID: ${user[0].id})`);
+    console.log(
+      `🟢 [Auth Success] Database user login: ${email} (ID: ${user[0].id})`
+    );
     console.log(`🔵 [Cache Update] Caching user data for email: ${email}`);
     await cacheUser(email, user[0].id, user[0].password);
 
@@ -161,25 +176,76 @@ const loginUser = async (req, res) => {
         sameSite: "strict",
       })
       .status(200)
-      .json({ 
-        success: true, 
-        message: "Login successful" 
+      .json({
+        success: true,
+        message: "Login successful",
       });
   } catch (error) {
     console.error(`⛔ [Login Error] ${error.message}`, error.stack);
-    return res.status(500).json({ 
-      success: false, 
-      message: "Internal server error" 
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
     });
   } finally {
     if (connection) connection.release();
   }
 };
 
+const logoutUser = async (req, res) => {
+  try {
+    const redisKey = `user:email:${req.user.email}`;
+    await redisClient.del(redisKey);
+    await res.clearCookie("token", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+    });
+    return res
+      .status(200)
+      .json({ success: true, message: "User loggedout successfully" });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, message: error.message || error });
+  }
+};
 
+const uploadAvatar = async (req, res) => {
+  let connection;
+  try {
+    const userId = req?.user?.userId;
 
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No file uploaded" });
+    }
 
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
 
+    connection = await db.getConnection();
 
-export { createUser,loginUser };
+    await connection.query("UPDATE user SET avatar = ? WHERE = ?", [
+      avatarPath,
+      userId,
+    ]);
+
+    connection.release();
+
+    return res.status(200).json({
+      success: true,
+      message: "Avatar uploaded successfully",
+      avatarUrl: avatarPath,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+export { createUser, loginUser, logoutUser,uploadAvatar };
