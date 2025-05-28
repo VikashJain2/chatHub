@@ -8,5 +8,5 @@ const userRouter = express.Router()
 userRouter.post("/create", createUser)
 userRouter.post("/login", loginUser)
 userRouter.get("/logout", verifyToken, logoutUser)
-userRouter.put("/upload-avatar", verifyToken, upload, uploadAvatar)
+userRouter.put("/upload-avatar", verifyToken, upload.single("avatar"), uploadAvatar)
 export default userRouter

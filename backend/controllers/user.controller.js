@@ -19,7 +19,6 @@ const cacheUser = async (email, userId, password) => {
 
   await redisClient.setEx(key, 86400, value);
 
-  // Log stored data
   const stored = await redisClient.get(key);
   console.log(`✅ Cached Redis data [${key}]:`, stored);
 };
@@ -133,8 +132,6 @@ const loginUser = async (req, res) => {
           message: "Login successful",
         });
     }
-
-    // Cache miss - query database
     console.log(`🔵 [Cache Miss] Querying database for email: ${email}`);
     const [user] = await connection.query(
       "SELECT id, password FROM user WHERE email = ? LIMIT 1",

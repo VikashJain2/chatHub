@@ -5,6 +5,7 @@ import { FaGithub, FaEye, FaEyeSlash } from "react-icons/fa";
 import { HiMail, HiUser } from "react-icons/hi";
 import axios from "axios";
 
+const BASE_URL: string = import.meta.env.BASE_URL;
 const baseAuthSchema = z.object({
   firstName: z.string().min(2, "At least 2 characters").optional(),
   lastName: z.string().min(2, "At least 2 characters").optional(),
@@ -34,7 +35,10 @@ type AuthFormValues = z.infer<typeof authSchema>;
 interface AuthFormProps {
   isLogin: boolean;
 }
-
+interface ApiResponse {
+  success: boolean;
+  message: string;
+}
 export default function AuthForm({ isLogin }: AuthFormProps) {
   const [formData, setFormData] = useState<AuthFormValues>({
     firstName: "",
@@ -77,8 +81,8 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
     if (validateForm()) {
       // console.log('Form data:', formData);
       try {
-        const response = await axios.post(
-          `http://localhost:4000/api/v1/user/${isLogin ? "login" : "create"}`,
+        const response = await axios.post<ApiResponse>(
+          `${BASE_URL}/user/${isLogin ? "login" : "create"}`,
           formData,
           {
             withCredentials: true,
