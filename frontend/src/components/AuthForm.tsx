@@ -5,7 +5,7 @@ import { FaGithub, FaEye, FaEyeSlash } from "react-icons/fa";
 import { HiMail, HiUser } from "react-icons/hi";
 import axios from "axios";
 
-const BASE_URL: string = import.meta.env.BASE_URL;
+const BASE_URL:string = import.meta.env.VITE_BASE_URL;
 const baseAuthSchema = z.object({
   firstName: z.string().min(2, "At least 2 characters").optional(),
   lastName: z.string().min(2, "At least 2 characters").optional(),
@@ -37,7 +37,8 @@ interface AuthFormProps {
 }
 interface ApiResponse {
   success: boolean;
-  message: string;
+  message?: string;
+  data?: [] | {}
 }
 export default function AuthForm({ isLogin }: AuthFormProps) {
   const [formData, setFormData] = useState<AuthFormValues>({

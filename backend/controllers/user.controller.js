@@ -245,4 +245,30 @@ const uploadAvatar = async (req, res) => {
   }
 };
 
-export { createUser, loginUser, logoutUser,uploadAvatar };
+const getAllUsersList = async(req,res)=>{
+  let connection;
+  try{
+    connection = await db.getConnection()
+
+    const user = req.user
+    console.log("user", user)
+    // let query = 'SELECT * FROM user';
+    let searchQuery = req.query.search;
+    let searchPattern = `%${searchQuery}%`
+
+    const cacheKey = `usersList:${searchQuery}`
+
+  const cacheData = await redisClient.get(cacheKey)
+
+  if(cacheData){
+    return res.status(200).json({success: true,data:cacheData})
+  }
+    const result = await connection.query("SELECT * FROM user WHERE (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?) AND id NOT LIKE ?",[searchPattern,searchPattern,searchPattern,user.userId])
+
+    return res.status(200).json({success:true, data: result[0]})
+  }catch(error){
+    return res.status(500).json({success: false, message: error.message || error})
+  }
+}
+
+export { createUser, loginUser, logoutUser,uploadAvatar,getAllUsersList };
