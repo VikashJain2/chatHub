@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
-
+import socket from '../socket/socket.ts'
 import type {
   ApiResponse,
   EmojiClickDataType,
@@ -126,29 +126,22 @@ const ChatApp: React.FC = () => {
     setShowEmojiPicker(false);
   };
 
-  const handleSendInvitation = (user: User) => {
-    setInvitationSent(true);
+  const handleSendInvitation = async(user: User) => {
+    
     setInviteInput(user.firstName + user.lastName);
-    const newNotification: Notification = {
-      id: notifications.length + 1,
-      type: "sent",
-      // userName: user.firstName+user.lastName,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      link: `https://chatapp.pro/invite/${btoa(
-        user.firstName + user.lastName
-      )}-${Math.random().toString(36).substr(2, 9)}`,
-    };
-    setNotifications([...notifications, newNotification]);
-    setTimeout(() => {
-      setShowInviteModal(false);
-      setInviteInput("");
-      setInvitationSent(false);
-    }, 2000);
+    try{
+      const response = await axios.post<ApiResponse<Object>>(`http://localhost:4000/api/v1/invitation/create/${user.id}`,{}, { withCredentials: true })
+
+      if(response.data.success){
+        setInvitationSent(true);
+        alert(response.data.message)
+      }
+    }catch(error : any){
+      if(error.response){
+        alert(error.response.data.message)
+      }
+      console.log(error)
+    }
   };
 
   const generateInvitationLink = () => {

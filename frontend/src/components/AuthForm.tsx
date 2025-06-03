@@ -4,8 +4,11 @@ import { FcGoogle } from "react-icons/fc";
 import { FaGithub, FaEye, FaEyeSlash } from "react-icons/fa";
 import { HiMail, HiUser } from "react-icons/hi";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 const BASE_URL:string = import.meta.env.VITE_BASE_URL;
+
+
 const baseAuthSchema = z.object({
   firstName: z.string().min(2, "At least 2 characters").optional(),
   lastName: z.string().min(2, "At least 2 characters").optional(),
@@ -41,6 +44,7 @@ interface ApiResponse {
   data?: [] | {}
 }
 export default function AuthForm({ isLogin }: AuthFormProps) {
+  const navigate = useNavigate()
   const [formData, setFormData] = useState<AuthFormValues>({
     firstName: "",
     lastName: "",
@@ -78,9 +82,7 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("calling function");
     if (validateForm()) {
-      // console.log('Form data:', formData);
       try {
         const response = await axios.post<ApiResponse>(
           `${BASE_URL}/user/${isLogin ? "login" : "create"}`,
@@ -92,11 +94,13 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
 
         if (response.data.success) {
           alert(response.data.message);
+          console.log(response.data.data)
+          navigate(`/chat/${response.data.data}`)
         }
       } catch (error) {
         console.log(error);
       }
-      // Handle authentication logic
+    
     }
   };
 

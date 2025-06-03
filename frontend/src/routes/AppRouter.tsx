@@ -19,7 +19,7 @@ const routes : RouteObject[] = [
         element: <AuthForm isLogin={false}/>
     },
     {
-        path: "/chat",
+        path: "/chat/:userId",
         element: <ChatApp/>
     }
 ]

@@ -68,14 +68,16 @@ const createUser = async (req, res) => {
       .json({
         success: true,
         message: "User created successfully",
-        userId: insertedUser.insertId,
+        data: insertedUser.insertId,
       });
   } catch (error) {
     if (connection) connection.release();
-    console.log(error);
+   
     return res
       .status(500)
       .json({ success: false, error: error.message || error });
+  }finally{
+    if(connection) connection.release()
   }
 };
 
@@ -130,6 +132,7 @@ const loginUser = async (req, res) => {
         .json({
           success: true,
           message: "Login successful",
+          data: parseUser.id
         });
     }
     console.log(`🔵 [Cache Miss] Querying database for email: ${email}`);
@@ -166,6 +169,7 @@ const loginUser = async (req, res) => {
     await cacheUser(email, user[0].id, user[0].password);
 
     const token = generateToken(user[0].id);
+    
     return res
       .cookie("token", token, {
         httpOnly: true,
@@ -176,6 +180,7 @@ const loginUser = async (req, res) => {
       .json({
         success: true,
         message: "Login successful",
+        data: user[0].id
       });
   } catch (error) {
     console.error(`⛔ [Login Error] ${error.message}`, error.stack);
@@ -245,30 +250,36 @@ const uploadAvatar = async (req, res) => {
   }
 };
 
-const getAllUsersList = async(req,res)=>{
+const getAllUsersList = async (req, res) => {
   let connection;
-  try{
-    connection = await db.getConnection()
+  try {
+    connection = await db.getConnection();
 
-    const user = req.user
-    console.log("user", user)
-    // let query = 'SELECT * FROM user';
+    const user = req.user;
+
     let searchQuery = req.query.search;
-    let searchPattern = `%${searchQuery}%`
+    let searchPattern = `%${searchQuery}%`;
 
-    const cacheKey = `usersList:${searchQuery}`
+    const cacheKey = `usersList:${searchQuery}`;
 
-  const cacheData = await redisClient.get(cacheKey)
+    const cacheData = await redisClient.get(cacheKey);
 
-  if(cacheData){
-    return res.status(200).json({success: true,data:cacheData})
+    if (cacheData) {
+      return res.status(200).json({ success: true, data: cacheData });
+    }
+    const result = await connection.query(
+      "SELECT * FROM user WHERE (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?) AND id NOT LIKE ?",
+      [searchPattern, searchPattern, searchPattern, user.userId]
+    );
+
+    return res.status(200).json({ success: true, data: result[0] });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, message: error.message || error });
+  }finally{
+    if (connection) connection.release();
   }
-    const result = await connection.query("SELECT * FROM user WHERE (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?) AND id NOT LIKE ?",[searchPattern,searchPattern,searchPattern,user.userId])
+};
 
-    return res.status(200).json({success:true, data: result[0]})
-  }catch(error){
-    return res.status(500).json({success: false, message: error.message || error})
-  }
-}
-
-export { createUser, loginUser, logoutUser,uploadAvatar,getAllUsersList };
+export { createUser, loginUser, logoutUser, uploadAvatar, getAllUsersList };
