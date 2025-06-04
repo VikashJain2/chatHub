@@ -89,6 +89,8 @@ const createUser = async (req, res) => {
 const loginUser = async (req, res) => {
   let connection;
   try {
+    const io = req.app.get("io")
+   
     const { email, password } = req.body;
 
     if (!email || !password) {

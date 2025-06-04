@@ -22,7 +22,9 @@ app.use("/api/v1/invitation", invitationRouter)
 const PORT = process.env.PORT || 4001
 const server = http.createServer(app)
 
-initSocketServer(server)
+const io = initSocketServer(server)
+
+app.set("io",io)
 
 server.listen(PORT, ()=>{
     console.log(`App listing on http://localhost:${PORT}`)

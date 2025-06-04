@@ -22,4 +22,7 @@ export function initSocketServer(httpServer) {
       console.log(`Socket ${socket.id} disconnected`)
     })
   })
+  return io
 }
+
+
