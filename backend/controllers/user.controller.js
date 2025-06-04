@@ -56,8 +56,13 @@ const createUser = async (req, res) => {
 
     await cacheUser(email, insertedUser.insertId, hashPassword);
 
-    connection.release();
     const token = generateToken(insertedUser.insertId);
+    
+    const [fullUserData] = await connection.query(
+      "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
+      [insertedUser.insertId]
+    );
+    connection.release();
     return res
       .cookie("token", token, {
         httpOnly: true,
@@ -68,7 +73,7 @@ const createUser = async (req, res) => {
       .json({
         success: true,
         message: "User created successfully",
-        data: insertedUser.insertId,
+        data: fullUserData[0],
       });
   } catch (error) {
     if (connection) connection.release();
@@ -95,33 +100,25 @@ const loginUser = async (req, res) => {
 
     connection = await db.getConnection();
 
-    // Check Redis cache first
     const cachedUser = await redisClient.get(`user:email:${email}`);
     if (cachedUser) {
-      console.log(
-        `🟢 [Cache Hit] User data retrieved from Redis for email: ${email}`
-      );
-      const parseUser = JSON.parse(cachedUser);
+      const parsedUser = JSON.parse(cachedUser);
 
-      const isValidPassword = await bcrypt.compare(
-        password,
-        parseUser.password
-      );
+      const isValidPassword = await bcrypt.compare(password, parsedUser.password);
       if (!isValidPassword) {
-        console.log(
-          `🔴 [Auth Failed] Invalid password attempt for cached user: ${email}`
-        );
         return res.status(400).json({
           success: false,
           message: "Invalid Credentials",
         });
       }
 
-      console.log(
-        `🟢 [Auth Success] Cached user login: ${email} (ID: ${parseUser.id})`
+      // Return full user (excluding password)
+      const [fullUserData] = await connection.query(
+        "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
+        [parsedUser.id]
       );
-      const token = generateToken(parseUser.id);
 
+      const token = generateToken(parsedUser.id);
       return res
         .cookie("token", token, {
           httpOnly: true,
@@ -132,19 +129,16 @@ const loginUser = async (req, res) => {
         .json({
           success: true,
           message: "Login successful",
-          data: parseUser.id
+          data: fullUserData[0],
         });
     }
-    console.log(`🔵 [Cache Miss] Querying database for email: ${email}`);
+
     const [user] = await connection.query(
       "SELECT id, password FROM user WHERE email = ? LIMIT 1",
       [email]
     );
 
     if (!user.length) {
-      console.log(
-        `🔴 [Auth Failed] No user found in database for email: ${email}`
-      );
       return res.status(400).json({
         success: false,
         message: "Invalid Credentials",
@@ -153,23 +147,20 @@ const loginUser = async (req, res) => {
 
     const checkPassword = await bcrypt.compare(password, user[0].password);
     if (!checkPassword) {
-      console.log(
-        `🔴 [Auth Failed] Password mismatch for user: ${email} (ID: ${user[0].id})`
-      );
       return res.status(400).json({
         success: false,
         message: "Invalid Credentials",
       });
     }
 
-    console.log(
-      `🟢 [Auth Success] Database user login: ${email} (ID: ${user[0].id})`
-    );
-    console.log(`🔵 [Cache Update] Caching user data for email: ${email}`);
     await cacheUser(email, user[0].id, user[0].password);
 
+    const [fullUserData] = await connection.query(
+      "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
+      [user[0].id]
+    );
+
     const token = generateToken(user[0].id);
-    
     return res
       .cookie("token", token, {
         httpOnly: true,
@@ -180,7 +171,7 @@ const loginUser = async (req, res) => {
       .json({
         success: true,
         message: "Login successful",
-        data: user[0].id
+        data: fullUserData[0],
       });
   } catch (error) {
     console.error(`⛔ [Login Error] ${error.message}`, error.stack);
@@ -192,6 +183,7 @@ const loginUser = async (req, res) => {
     if (connection) connection.release();
   }
 };
+
 
 const logoutUser = async (req, res) => {
   try {

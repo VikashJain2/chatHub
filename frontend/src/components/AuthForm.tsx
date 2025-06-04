@@ -5,6 +5,9 @@ import { FaGithub, FaEye, FaEyeSlash } from "react-icons/fa";
 import { HiMail, HiUser } from "react-icons/hi";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import type { ApiResponse, User } from "../types/types";
+import { useDispatch } from "react-redux";
+import { setUser } from "../store/userSlice";
 
 const BASE_URL:string = import.meta.env.VITE_BASE_URL;
 
@@ -38,13 +41,10 @@ type AuthFormValues = z.infer<typeof authSchema>;
 interface AuthFormProps {
   isLogin: boolean;
 }
-interface ApiResponse {
-  success: boolean;
-  message?: string;
-  data?: [] | {}
-}
+
 export default function AuthForm({ isLogin }: AuthFormProps) {
   const navigate = useNavigate()
+  const dispatch = useDispatch()
   const [formData, setFormData] = useState<AuthFormValues>({
     firstName: "",
     lastName: "",
@@ -84,7 +84,7 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
     e.preventDefault();
     if (validateForm()) {
       try {
-        const response = await axios.post<ApiResponse>(
+        const response = await axios.post<ApiResponse<User>>(
           `${BASE_URL}/user/${isLogin ? "login" : "create"}`,
           formData,
           {
@@ -94,8 +94,8 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
 
         if (response.data.success) {
           alert(response.data.message);
-          console.log(response.data.data)
-          navigate(`/chat/${response.data.data}`)
+          dispatch(setUser(response.data.data!))
+          navigate(`/chat/${response.data.data?.id}`)
         }
       } catch (error) {
         console.log(error);

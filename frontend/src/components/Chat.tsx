@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
-import socket from '../socket/socket.ts'
+// import socket from '../socket/socket.ts'
 import type {
   ApiResponse,
   EmojiClickDataType,
@@ -16,8 +16,13 @@ import MessageInput from "./MessageInput";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import WelcomeScreen from "./WelcomeScreen";
+import { useSocket } from "../socket/socket";
+import { useSelector } from "react-redux";
+import type { RootState } from "../store/store";
 
 const ChatApp: React.FC = () => {
+  const user = useSelector((state:RootState)=> state.user)
+  const socket = useSocket()
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, text: "Hello there! 👋", sender: "other", timestamp: "09:41" },
     { id: 2, text: "Hi! How are you?", sender: "user", timestamp: "09:42" },
@@ -85,6 +90,7 @@ const ChatApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    console.log(user)
     const handleClickOutside = (event: MouseEvent) => {
       if (
         notificationRef.current &&
