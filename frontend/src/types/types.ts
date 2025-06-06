@@ -16,9 +16,10 @@ export interface User {
 
 export interface Notification {
   id: number;
-  type: "sent" | "received" | "accepted";
-  firstName: string;
-  lastName: string;
+  type: "invitation_sent" | "invitation_received";
+  // firstName: string;
+  // lastName: string;
+  userName:String;
   timestamp: string;
   email?: string;
   link?: string;

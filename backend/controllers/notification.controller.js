@@ -31,27 +31,41 @@ const fetchAllNotifications = async (req, res) => {
 
     const cacheKey = `notifications:${userId}`;
 
-    const existInCache = await redisClient.get(cacheKey);
+    // Use lRange instead of get
+    const cachedNotifications = await redisClient.lRange(cacheKey, 0, -1);
 
-    if (existInCache) {
-      const parsedData = JSON.parse(existInCache);
+    if (cachedNotifications.length > 0) {
+      const parsedData = cachedNotifications.map(JSON.parse);
       connection.release();
-      return res.status(200).json({ success: true, notifications: parsedData });
+      return res.status(200).json({ success: true, data: parsedData });
     }
 
+    // Fetch from DB if not in cache
     const [notifications] = await connection.query(
-      "SELECT n.id,n.type,n.user_id,n.related_user_id,n.link,n.timestamp, CONCAT(u.firstName, ' ', u.lastName) AS userName FROM notifications n LEFT JOIN user u ON n.user_id = u.id WHERE n.related_user_id = ? ORDER BY n.timestamp DESC",
+      `SELECT n.id, n.type, n.user_id, n.related_user_id, n.link, n.timestamp, n.invitation_id,
+              CONCAT(u.firstName, ' ', u.lastName) AS userName
+       FROM notifications n
+       LEFT JOIN user u ON n.user_id = u.id
+       WHERE n.related_user_id = ?
+       ORDER BY n.timestamp DESC`,
       [userId]
     );
 
-    await redisClient.setEx(cacheKey, JSON.stringify(notifications), {
-      EX: 60,
-    });
+    // Optional: Push DB results into Redis for future caching
+    if (notifications.length > 0) {
+      await redisClient.del(cacheKey); // Clear existing list
+      for (const notification of notifications) {
+        await redisClient.lPush(cacheKey, JSON.stringify(notification));
+      }
+      await redisClient.lTrim(cacheKey, 0, 99);
+      await redisClient.expire(cacheKey, 60); // optional TTL
+    }
 
     return res
       .status(200)
-      .json({ success: true, notifications: notifications });
+      .json({ success: true, data: notifications });
   } catch (error) {
+    console.log(error);
     return res
       .status(500)
       .json({ success: false, message: error.message || error });
@@ -59,5 +73,6 @@ const fetchAllNotifications = async (req, res) => {
     if (connection) connection.release();
   }
 };
+
 
 export { createNotification, fetchAllNotifications };

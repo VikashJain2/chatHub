@@ -5,7 +5,7 @@ import { createNotification } from "./notification.controller.js";
 const createInvitation = async (req, res) => {
   let connection;
   try {
-    // const io  = req.app.get("io")
+    const io  = req.app.get("io")
     connection = await db.getConnection();
     const { inviteeId } = req.params;
 
@@ -65,7 +65,7 @@ const createInvitation = async (req, res) => {
       type: "invitation_sent",
       user_id: inviterId,
       related_user_id: inviteeId,
-
+      invitation_id: inviteResult.insertId,
       timestamp: new Date().toISOString(),
       userName: userName[0].userName,
     };
@@ -75,6 +75,7 @@ const createInvitation = async (req, res) => {
     );
     await redisClient.lTrim(`notifications:${inviteeId}`, 0, 99);
 
+    io.to(`user:${related_user_id}`).emit('invite-notification', notification)
     
     return res.status(200).json({
       success: true,

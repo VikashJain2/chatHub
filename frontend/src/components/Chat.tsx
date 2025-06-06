@@ -89,8 +89,10 @@ const ChatApp: React.FC = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  useEffect(()=>{
+    fetchAllNotifications()
+  },[])
   useEffect(() => {
-    console.log(user)
     const handleClickOutside = (event: MouseEvent) => {
       if (
         notificationRef.current &&
@@ -155,20 +157,35 @@ const ChatApp: React.FC = () => {
       inviteInput
     )}-${Math.random().toString(36).substr(2, 9)}`;
     setInvitationLink(mockLink);
-    const newNotification: Notification = {
-      id: notifications.length + 1,
-      type: "sent",
-      // userName: inviteInput,
-      firstName: inviteInput,
-      lastName: inviteInput,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      link: mockLink,
-    };
-    setNotifications([...notifications, newNotification]);
+    // const newNotification: Notification = {
+    //   id: notifications.length + 1,
+    //   type: "sent",
+    //   // userName: inviteInput,
+    //   firstName: inviteInput,
+    //   lastName: inviteInput,
+    //   timestamp: new Date().toLocaleTimeString([], {
+    //     hour: "2-digit",
+    //     minute: "2-digit",
+    //   }),
+    //   link: mockLink,
+    // };
+    // setNotifications([...notifications, newNotification]);
   };
+
+  const fetchAllNotifications = async():Promise<void>=>{
+    try {
+      const response = await axios.get<ApiResponse<Notification[] | []>>(`${BASE_URL}/notifications/get`,{
+        withCredentials: true
+      })
+
+      if(response.data.success){
+        console.log(response.data.data)
+        setNotifications(response.data.data!)
+      }
+    } catch (error) {
+      console.log(error)
+    }
+  }
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -192,7 +209,7 @@ const ChatApp: React.FC = () => {
     setUsers([...users, newUser]);
     const acceptedNotification: Notification = {
       id: notifications.length + 1,
-      type: "accepted",
+      type: "invitation_sent",
       // userName: notification.userName,
       firstName: notification.firstName,
       lastName: notification.lastName,
@@ -253,9 +270,8 @@ const ChatApp: React.FC = () => {
   const handleSearchUser = async (
     e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> => {
-    try {
+    try { // debouncing pending
       const value = e.target.value;
-      console.log("function called");
 
       setInviteInput(value); // still update the state for UI binding
 
