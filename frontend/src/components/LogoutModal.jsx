@@ -1,8 +1,7 @@
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import type { LogoutModalProps } from '../types/types';
 
 
-const LogoutModal: React.FC<LogoutModalProps> = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
+const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
   return (
     showLogoutModal && (
       <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 sm:p-6 animate-fade-in">

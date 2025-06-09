@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import db from "../config/db.js";
 import jwt from "jsonwebtoken";
 import { redisClient } from "../config/redis.js";
+import cloudinary from "../config/cloudinary.js";
+import fs from 'fs'
 const generateToken = (userId) => {
   // console.log(userId);
 
@@ -221,7 +223,11 @@ const uploadAvatar = async (req, res) => {
         .json({ success: false, message: "No file uploaded" });
     }
 
-    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+    const avatarPath = await cloudinary.uploader.upload(req.file.path,{
+      folder: "chatHub"
+    })
+
+    fs.unlinkSync(req.file.path)
 
     connection = await db.getConnection();
 

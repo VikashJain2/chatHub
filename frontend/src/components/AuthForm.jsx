@@ -5,12 +5,10 @@ import { FaGithub, FaEye, FaEyeSlash } from "react-icons/fa";
 import { HiMail, HiUser } from "react-icons/hi";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import type { ApiResponse, User } from "../types/types";
 import { useDispatch } from "react-redux";
 import { setUser } from "../store/userSlice";
 
-const BASE_URL:string = import.meta.env.VITE_BASE_URL;
-
+const BASE_URL = import.meta.env.VITE_BASE_URL;
 
 const baseAuthSchema = z.object({
   firstName: z.string().min(2, "At least 2 characters").optional(),
@@ -36,25 +34,19 @@ const authSchema = baseAuthSchema.refine(
   }
 );
 
-type AuthFormValues = z.infer<typeof authSchema>;
-
-interface AuthFormProps {
-  isLogin: boolean;
-}
-
-export default function AuthForm({ isLogin }: AuthFormProps) {
-  const navigate = useNavigate()
-  const dispatch = useDispatch()
-  const [formData, setFormData] = useState<AuthFormValues>({
+export default function AuthForm({ isLogin }) {
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
     email: "",
     password: "",
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -68,9 +60,8 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
       setErrors({});
       return true;
     } catch (error) {
-      console.log(error);
       if (error instanceof z.ZodError) {
-        const newErrors: Record<string, string> = {};
+        const newErrors = {};
         error.errors.forEach((err) => {
           newErrors[err.path[0]] = err.message;
         });
@@ -80,11 +71,11 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (validateForm()) {
       try {
-        const response = await axios.post<ApiResponse<User>>(
+        const response = await axios.post(
           `${BASE_URL}/user/${isLogin ? "login" : "create"}`,
           formData,
           {
@@ -94,13 +85,12 @@ export default function AuthForm({ isLogin }: AuthFormProps) {
 
         if (response.data.success) {
           alert(response.data.message);
-          dispatch(setUser(response.data.data!))
-          navigate(`/chat/${response.data.data?.id}`)
+          dispatch(setUser(response.data.data));
+          navigate(`/chat/${response.data.data?.id}`);
         }
       } catch (error) {
         console.log(error);
       }
-    
     }
   };
 

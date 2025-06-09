@@ -1,19 +1,17 @@
-import type { User } from "../types/types";
+
 import { createSlice } from "@reduxjs/toolkit";
-import type {PayloadAction} from '@reduxjs/toolkit'
-const initialState: Partial<User> = {}
+const initialState = {}
 
 const userSlice = createSlice({
     name: "user",
     initialState,
     reducers:{
        
-        setUser: (_, action:PayloadAction<User>)=>{
-            console.log("action.payload",action.payload)
+        setUser: (_, action)=>{
             return action.payload
         },
 
-        updateUser: (state, action:PayloadAction<Partial<User>>)=>{
+        updateUser: (state, action)=>{
             return {...state, ...action.payload}
         },
 

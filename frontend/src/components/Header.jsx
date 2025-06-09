@@ -1,8 +1,7 @@
 import { useRef } from "react";
-import type { HeaderProps } from "../types/types";
 import { Bars3Icon, BellIcon, EnvelopeIcon, PhoneIcon, TrashIcon, VideoCameraIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
-const Header: React.FC<HeaderProps> = ({
+const Header = ({
   selectedUser,
   setIsSidebarOpen,
   notifications,
@@ -12,7 +11,7 @@ const Header: React.FC<HeaderProps> = ({
   deleteNotification,
   copyToClipboard,
 }) => {
-  const notificationRef = useRef<HTMLDivElement>(null);
+  const notificationRef = useRef(null);
 
   return (
     <div className="p-4 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
@@ -111,7 +110,7 @@ const Header: React.FC<HeaderProps> = ({
                             className="flex-1 text-xs p-2 bg-gray-100 border border-gray-300 rounded-lg truncate text-gray-900"
                           />
                           <button
-                            onClick={() => copyToClipboard(notification.link!)}
+                            onClick={() => copyToClipboard(notification.link)}
                             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all"
                           >
                             Copy

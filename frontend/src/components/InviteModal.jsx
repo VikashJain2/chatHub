@@ -1,7 +1,6 @@
 import { XMarkIcon, EnvelopeIcon, LinkIcon } from '@heroicons/react/24/outline';
-import type { InviteModalProps, User } from '../types/types';
 
-const InviteModal: React.FC<InviteModalProps> = ({
+const InviteModal = ({
   showInviteModal,
   setShowInviteModal,
   inviteInput,
@@ -74,7 +73,7 @@ const InviteModal: React.FC<InviteModalProps> = ({
               <div className="space-y-4">
                 {filteredUsers.length > 0 ? (
                   <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 bg-white">
-                    {filteredUsers.map((user: User) => (
+                    {filteredUsers.map((user) => (
                       <div
                         key={user.id}
                         className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"

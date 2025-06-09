@@ -1,11 +1,10 @@
 import { useRef, useEffect } from 'react';
-import type { MessageListProps } from '../types/types';
 
 
 
-const MessageList: React.FC<MessageListProps> = ({ messages, selectedUser, users }) => {
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+const MessageList= ({ messages, selectedUser, users }) => {
+  const messagesContainerRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
     if (messagesContainerRef.current) {

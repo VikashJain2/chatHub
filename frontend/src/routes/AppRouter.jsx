@@ -1,11 +1,9 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-import type { RouteObject } from 'react-router-dom';
 import AuthForm from "../components/AuthForm";
 import App from "../App";
-import type { JSX } from "react";
 import ChatApp from '../components/Chat';
 
-const routes : RouteObject[] = [
+const routes  = [
     {
         path: "/",
         element: <App/>
@@ -26,6 +24,6 @@ const routes : RouteObject[] = [
 
 const router = createBrowserRouter(routes)
 
-export default function AppRouter() : JSX.Element{
+export default function AppRouter(){
     return <RouterProvider router={router}/>
 }

@@ -1,5 +1,4 @@
 import { useRef } from "react";
-import type { SidebarProps } from "../types/types";
 import { ArrowRightOnRectangleIcon, PlusIcon, UserCircleIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 const Sidebar = ({
@@ -11,8 +10,8 @@ const Sidebar = ({
   setShowProfileModal,
   setShowInviteModal,
   setShowLogoutModal,
-}: SidebarProps) => {
-  const sidebarRef = useRef<HTMLDivElement>(null);
+}) => {
+  const sidebarRef = useRef(null);
 
   return (
     <div

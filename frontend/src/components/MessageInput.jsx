@@ -1,10 +1,9 @@
 import { FaceSmileIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import EmojiPicker, { EmojiStyle } from 'emoji-picker-react';
-import type { MessageInputProps } from '../types/types';
 
 
 
-const MessageInput: React.FC<MessageInputProps> = ({
+const MessageInput = ({
   newMessage,
   setNewMessage,
   showEmojiPicker,
