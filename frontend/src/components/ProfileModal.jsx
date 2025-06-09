@@ -1,5 +1,4 @@
 import { XMarkIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
-import { useEffect } from 'react';
 
 const ProfileModal = ({
   showProfileModal,
@@ -9,10 +8,7 @@ const ProfileModal = ({
   handleUpdateProfile,
   handleImageUpload,
 }) => {
-
-  useEffect(()=>{
-    console.log("consoling from profilePage",userDetails)
-  },[])
+ 
   return (
     showProfileModal && (
       <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">

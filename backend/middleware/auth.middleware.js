@@ -10,7 +10,7 @@ const verifyToken = async(req,res,next)=>{
 
          const decodeToken = await jwt.verify(token, process.env.JWT_SECRET)
          req.user = decodeToken
-
+         console.log("req.user-->", req.user)
          next()
     } catch (error) {
          console.error(error);

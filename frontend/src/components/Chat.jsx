@@ -244,7 +244,22 @@ const ChatApp = () => {
     }, 500);
   }, []);
 
-  const handleUpdateProfile = useCallback(() => {}, []);
+  const handleUpdateProfile = useCallback(async() => {
+    console.log("userDetails--->", userDetails)
+    try {
+      const response = await axios.put(`${BASE_URL}/user/update-profile`, userDetails,{
+        withCredentials: true
+      })
+
+      if(response.data.success){
+        alert(response.data.message)
+        dispatch(updateUser(response.data.user))
+        showProfileModal(false)
+      }
+    } catch (error) {
+      console.log(error)
+    }
+  }, []);
 
   const handleImageUpload = useCallback(
     async (event) => {
@@ -257,17 +272,21 @@ const ChatApp = () => {
       let formData = new FormData();
       formData.append("avatar", file);
 
-      const response = await axios.post(
-        `${BASE_URL}/user/upload-avatar`,
-        formData,
-        {
-          withCredentials: true,
+    try {
+        const response = await axios.put(
+          `${BASE_URL}/user/upload-avatar`,
+          formData,
+          {
+            withCredentials: true,
+          }
+        );
+  
+        if (response.data.success) {
+          dispatch(updateUser({avatar:response.data.avatarUrl.secure_url}));
         }
-      );
-
-      if (response.data.success) {
-        dispatch(updateUser(response.data.data));
-      }
+    } catch (error) {
+      console.log(error)
+    }
     },
     []
   );

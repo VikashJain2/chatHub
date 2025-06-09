@@ -4,8 +4,10 @@ import jwt from "jsonwebtoken";
 import { redisClient } from "../config/redis.js";
 import cloudinary from "../config/cloudinary.js";
 import fs from 'fs'
+import path from 'path'
+import {v4 as uuidv4, v4 } from 'uuid'
 const generateToken = (userId) => {
-  // console.log(userId);
+  console.log("userId in generate Token--->",userId);
 
   let payload = {
     userId: userId,
@@ -50,19 +52,19 @@ const createUser = async (req, res) => {
     }
 
     const hashPassword = await bcrypt.hash(password, 10);
-
+    let id = uuidv4()
     const [insertedUser] = await connection.query(
-      "insert into user (firstName, lastName, email, password) values (?,?,?,?)",
-      [firstName, lastName, email, hashPassword]
+      "insert into user (id,firstName, lastName, email, password) values (?,?,?,?,?)",
+      [id,firstName, lastName, email, hashPassword]
     );
 
-    await cacheUser(email, insertedUser.insertId, hashPassword);
+    await cacheUser(email, id, hashPassword);
 
-    const token = generateToken(insertedUser.insertId);
+    const token = generateToken(id);
     
     const [fullUserData] = await connection.query(
       "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
-      [insertedUser.insertId]
+      [id]
     );
     connection.release();
     return res
@@ -118,9 +120,10 @@ const loginUser = async (req, res) => {
 
       // Return full user (excluding password)
       const [fullUserData] = await connection.query(
-        "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
+        "SELECT id, firstName, lastName, email, avatar FROM user WHERE id = ?",
         [parsedUser.id]
       );
+
 
       const token = generateToken(parsedUser.id);
       return res
@@ -160,10 +163,11 @@ const loginUser = async (req, res) => {
     await cacheUser(email, user[0].id, user[0].password);
 
     const [fullUserData] = await connection.query(
-      "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
+      "SELECT id, firstName, lastName, email,avatar FROM user WHERE id = ?",
       [user[0].id]
     );
 
+    console.log("userId in Login-->",user[0].id)
     const token = generateToken(user[0].id);
     return res
       .cookie("token", token, {
@@ -229,10 +233,16 @@ const uploadAvatar = async (req, res) => {
 
     fs.unlinkSync(req.file.path)
 
+       const uploadDir = path.dirname(req.file.path);
+    try {
+      fs.rmdirSync(uploadDir, { recursive: true });
+    } catch (folderErr) {
+      console.warn("Failed to remove upload folder:", folderErr.message);
+    }
     connection = await db.getConnection();
 
-    await connection.query("UPDATE user SET avatar = ? WHERE = ?", [
-      avatarPath,
+    await connection.query("UPDATE user SET avatar = ? WHERE id = ?", [
+      avatarPath.secure_url,
       userId,
     ]);
 
@@ -249,6 +259,32 @@ const uploadAvatar = async (req, res) => {
     if (connection) connection.release();
   }
 };
+
+const updateProfile = async(req,res)=>{
+  let connection;
+  try{
+    const userId = req.user.userId
+    const {firstName, lastName, email} = req.body;
+    if(!userId){
+      return res.status(400).json({success: false, message: "UnAuthorized"})
+    }
+
+    if(!firstName || !lastName || !email){
+      return res.status(400).json({success: false, message: "All Fields Are Required"})
+    }
+
+    connection = await db.getConnection()
+
+    await connection.query("UPDATE user SET firstName = ?, lastName = ? , email = ?WHERE id = ?",[firstName, lastName,email, userId])
+
+    const [updatedUser] = await connection.query("SELECT * FROM user WHERE id=?",[userId])
+
+    return res.status(200).json({success:true, user: updatedUser[0]})
+
+  }catch(error){
+    return res.status(500).json({success: false, message: error.message || error})
+  }
+}
 
 const getAllUsersList = async (req, res) => {
   let connection;
@@ -282,4 +318,4 @@ const getAllUsersList = async (req, res) => {
   }
 };
 
-export { createUser, loginUser, logoutUser, uploadAvatar, getAllUsersList };
+export { createUser, loginUser, logoutUser, uploadAvatar, getAllUsersList,updateProfile };

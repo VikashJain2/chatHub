@@ -1,7 +1,7 @@
 import db from "../config/db.js";
 import { redisClient } from "../config/redis.js";
 import { createNotification } from "./notification.controller.js";
-
+import {v4 as uuidv4} from 'uuid'
 const createInvitation = async (req, res) => {
   let connection;
   try {
@@ -42,10 +42,11 @@ const createInvitation = async (req, res) => {
         message: "Invitation Already Exist And Pending",
       });
     }
+    let id = uuidv4()
 
     const [inviteResult] = await connection.query(
-      "INSERT INTO invitations (inviter_id,invitee_id) VALUES(?, ?)",
-      [inviterId, inviteeId]
+      "INSERT INTO invitations (id,inviter_id,invitee_id) VALUES(?,?, ?)",
+      [id,inviterId, inviteeId]
     );
 
     const [userName] = await connection.query(
@@ -57,7 +58,7 @@ const createInvitation = async (req, res) => {
       "invitation_sent",
       inviterId,
       inviteeId,
-      inviteResult.insertId
+      id
     );
 
     const notification = {
@@ -65,7 +66,7 @@ const createInvitation = async (req, res) => {
       type: "invitation_sent",
       user_id: inviterId,
       related_user_id: inviteeId,
-      invitation_id: inviteResult.insertId,
+      invitation_id: id,
       timestamp: new Date().toISOString(),
       userName: userName[0].userName,
     };
@@ -75,7 +76,7 @@ const createInvitation = async (req, res) => {
     );
     await redisClient.lTrim(`notifications:${inviteeId}`, 0, 99);
 
-    io.to(`user:${related_user_id}`).emit('invite-notification', notification)
+    io.to(`user:${inviteeId}`).emit('invite-notification', notification)
     
     return res.status(200).json({
       success: true,
