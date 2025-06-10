@@ -11,8 +11,10 @@ import WelcomeScreen from "./WelcomeScreen";
 import { useSocket } from "../socket/socket";
 import { useDispatch, useSelector } from "react-redux";
 import { updateUser } from "../store/userSlice";
+import toast, { useToaster } from "react-hot-toast";
 
 const ChatApp = () => {
+
   const user = useSelector((state) => state.user);
   const dispatch = useDispatch();
   const socket = useSocket();
@@ -56,6 +58,21 @@ const ChatApp = () => {
       });
     }
   };
+
+  useEffect(()=>{
+    if(!socket){
+      return
+    }
+    const handleNewNotification = (data)=>{
+      console.log("new Notification data-->", data)
+      setNotifications((prev)=> [data,...prev])
+    }
+    socket.on("invite-notification",handleNewNotification)
+
+    return ()=>{
+      socket.off("invite-notification", handleNewNotification)
+    }
+  },[socket])
 
   useEffect(() => {
     scrollToBottom();
@@ -107,6 +124,7 @@ const ChatApp = () => {
       }
     };
   }, []);
+
 
   const copyToClipboard = useCallback(async (text) => {
     try {
@@ -186,14 +204,15 @@ const ChatApp = () => {
         );
         if (response.data.success) {
           setInvitationSent(true);
-          alert(response.data.message);
+          toast.success(response.data.message);
         }
-      } catch (error) {
-        if (error.response) {
-          alert(error.response.data.message);
-        }
-        console.log(error);
+      }  catch (error) {
+      if(error.response){
+        toast.error(error.response.data.message)
+      }else{
+        toast.error("Something Went Wrong. Try Again Letter!")
       }
+    }
     },
     []
   );
@@ -215,7 +234,11 @@ const ChatApp = () => {
         setNotifications(response.data.data);
       }
     } catch (error) {
-      console.log(error);
+      if(error.response){
+        toast.error(error.response.data.message)
+      }else{
+        toast.error("Something Went Wrong. Try Again Letter!")
+      }
     }
   }, []);
 
@@ -237,27 +260,34 @@ const ChatApp = () => {
           } else {
             console.log(response.data.message);
           }
-        } catch (error) {
-          console.log(error);
-        }
+        }  catch (error) {
+      if(error.response){
+        toast.error(error.response.data.message)
+      }else{
+        toast.error("Something Went Wrong. Try Again Letter!")
+      }
+    }
       })();
     }, 500);
   }, []);
 
   const handleUpdateProfile = useCallback(async() => {
-    console.log("userDetails--->", userDetails)
     try {
       const response = await axios.put(`${BASE_URL}/user/update-profile`, userDetails,{
         withCredentials: true
       })
 
       if(response.data.success){
-        alert(response.data.message)
+        toast.success(response.data.message)
         dispatch(updateUser(response.data.user))
         showProfileModal(false)
       }
-    } catch (error) {
-      console.log(error)
+    }  catch (error) {
+      if(error.response){
+        toast.error(error.response.data.message)
+      }else{
+        toast.error("Something Went Wrong. Try Again Letter!")
+      }
     }
   }, []);
 
@@ -282,9 +312,15 @@ const ChatApp = () => {
         );
   
         if (response.data.success) {
+          toast.success(response.data.message)
           dispatch(updateUser({avatar:response.data.avatarUrl.secure_url}));
         }
     } catch (error) {
+      if(error.response){
+        toast.error(error.response.data.message)
+      }else{
+        toast.error("Something Went Wrong. Try Again Letter!")
+      }
       console.log(error)
     }
     },

@@ -10,19 +10,28 @@ export function initSocketServer(httpServer) {
     },
   });
 
-  io.on('connection',(socket)=>{
-    const userId = socket.handshake?.auth.userId
+  io.on('connection', (socket) => {
+    const userId = socket.handshake?.auth?.userId;
 
-    if(userId){
-        socket.join(`user:${userId}`)
-        console.log(`User ${userId} connected with socket ${socket.id}`)
+    if (userId) {
+      socket.join(`user:${userId}`);
+      console.log(`User ${userId} connected with socket ${socket.id}`);
+    } else {
+      console.warn(`Socket ${socket.id} connected without auth userId`);
     }
 
+    // ✅ Explicit `join` event for extra reliability
+    socket.on("join", (userId) => {
+      if (userId) {
+        socket.join(`user:${userId}`);
+        console.log(`Socket ${socket.id} joined room user:${userId}`);
+      }
+    });
+
     socket.on('disconnect', () => {
-      console.log(`Socket ${socket.id} disconnected`)
-    })
-  })
-  return io
+      console.log(`Socket ${socket.id} disconnected`);
+    });
+  });
+
+  return io;
 }
-
-

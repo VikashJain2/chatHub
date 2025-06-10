@@ -3,11 +3,10 @@ import db from "../config/db.js";
 import jwt from "jsonwebtoken";
 import { redisClient } from "../config/redis.js";
 import cloudinary from "../config/cloudinary.js";
-import fs from 'fs'
-import path from 'path'
-import {v4 as uuidv4, v4 } from 'uuid'
+import fs from "fs";
+import path from "path";
+import { v4 as uuidv4, v4 } from "uuid";
 const generateToken = (userId) => {
-  console.log("userId in generate Token--->",userId);
 
   let payload = {
     userId: userId,
@@ -52,16 +51,16 @@ const createUser = async (req, res) => {
     }
 
     const hashPassword = await bcrypt.hash(password, 10);
-    let id = uuidv4()
+    let id = uuidv4();
     const [insertedUser] = await connection.query(
       "insert into user (id,firstName, lastName, email, password) values (?,?,?,?,?)",
-      [id,firstName, lastName, email, hashPassword]
+      [id, firstName, lastName, email, hashPassword]
     );
 
     await cacheUser(email, id, hashPassword);
 
     const token = generateToken(id);
-    
+
     const [fullUserData] = await connection.query(
       "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
       [id]
@@ -81,12 +80,12 @@ const createUser = async (req, res) => {
       });
   } catch (error) {
     if (connection) connection.release();
-   
+
     return res
       .status(500)
       .json({ success: false, error: error.message || error });
-  }finally{
-    if(connection) connection.release()
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -94,7 +93,7 @@ const loginUser = async (req, res) => {
   let connection;
   try {
     // const io = req.app.get("io")
-   
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -110,7 +109,10 @@ const loginUser = async (req, res) => {
     if (cachedUser) {
       const parsedUser = JSON.parse(cachedUser);
 
-      const isValidPassword = await bcrypt.compare(password, parsedUser.password);
+      const isValidPassword = await bcrypt.compare(
+        password,
+        parsedUser.password
+      );
       if (!isValidPassword) {
         return res.status(400).json({
           success: false,
@@ -123,7 +125,6 @@ const loginUser = async (req, res) => {
         "SELECT id, firstName, lastName, email, avatar FROM user WHERE id = ?",
         [parsedUser.id]
       );
-
 
       const token = generateToken(parsedUser.id);
       return res
@@ -167,7 +168,7 @@ const loginUser = async (req, res) => {
       [user[0].id]
     );
 
-    console.log("userId in Login-->",user[0].id)
+    console.log("userId in Login-->", user[0].id);
     const token = generateToken(user[0].id);
     return res
       .cookie("token", token, {
@@ -191,7 +192,6 @@ const loginUser = async (req, res) => {
     if (connection) connection.release();
   }
 };
-
 
 const logoutUser = async (req, res) => {
   try {
@@ -227,13 +227,13 @@ const uploadAvatar = async (req, res) => {
         .json({ success: false, message: "No file uploaded" });
     }
 
-    const avatarPath = await cloudinary.uploader.upload(req.file.path,{
-      folder: "chatHub"
-    })
+    const avatarPath = await cloudinary.uploader.upload(req.file.path, {
+      folder: "chatHub",
+    });
 
-    fs.unlinkSync(req.file.path)
+    fs.unlinkSync(req.file.path);
 
-       const uploadDir = path.dirname(req.file.path);
+    const uploadDir = path.dirname(req.file.path);
     try {
       fs.rmdirSync(uploadDir, { recursive: true });
     } catch (folderErr) {
@@ -260,31 +260,40 @@ const uploadAvatar = async (req, res) => {
   }
 };
 
-const updateProfile = async(req,res)=>{
+const updateProfile = async (req, res) => {
   let connection;
-  try{
-    const userId = req.user.userId
-    const {firstName, lastName, email} = req.body;
-    if(!userId){
-      return res.status(400).json({success: false, message: "UnAuthorized"})
+  try {
+    const userId = req.user.userId;
+    const { firstName, lastName, email } = req.body;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "UnAuthorized" });
     }
 
-    if(!firstName || !lastName || !email){
-      return res.status(400).json({success: false, message: "All Fields Are Required"})
+    if (!firstName || !lastName || !email) {
+      return res
+        .status(400)
+        .json({ success: false, message: "All Fields Are Required" });
     }
 
-    connection = await db.getConnection()
+    connection = await db.getConnection();
 
-    await connection.query("UPDATE user SET firstName = ?, lastName = ? , email = ?WHERE id = ?",[firstName, lastName,email, userId])
+    await connection.query(
+      "UPDATE user SET firstName = ?, lastName = ? , email = ?WHERE id = ?",
+      [firstName, lastName, email, userId]
+    );
 
-    const [updatedUser] = await connection.query("SELECT * FROM user WHERE id=?",[userId])
+    const [updatedUser] = await connection.query(
+      "SELECT * FROM user WHERE id=?",
+      [userId]
+    );
 
-    return res.status(200).json({success:true, user: updatedUser[0]})
-
-  }catch(error){
-    return res.status(500).json({success: false, message: error.message || error})
+    return res.status(200).json({ success: true, user: updatedUser[0] });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, message: error.message || error });
   }
-}
+};
 
 const getAllUsersList = async (req, res) => {
   let connection;
@@ -313,9 +322,58 @@ const getAllUsersList = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, message: error.message || error });
-  }finally{
+  } finally {
     if (connection) connection.release();
   }
 };
 
-export { createUser, loginUser, logoutUser, uploadAvatar, getAllUsersList,updateProfile };
+const fetchUserDetails = async (req, res) => {
+  let connection;
+  try {
+    const userId = req.user.userId;
+    let cacheKey = `user:${userId}`;
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Not Authenticated" });
+    }
+
+    const cacheUser = await redisClient.get(cacheKey);
+    if (cacheUser) {
+      const parseUser = JSON.parse(cacheUser);
+      return res.status(200).json({ success: true, user: parseUser });
+    }
+
+    connection = await db.getConnection();
+
+    const [user] = await connection.query(
+      "SELECT firstName, lastName, email, avatar FROM user WHERE id = ?",
+      [userId]
+    );
+
+    if (user.length > 0) {
+      await redisClient.setEx(cacheKey, 60, JSON.stringify(user[0]));
+
+      connection.release();
+      return res.status(200).json({ success: true, user: user[0] });
+    }
+    return res
+      .status(400)
+      .json({ success: false, message: "User does not exist" });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, message: error.message || error });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+export {
+  createUser,
+  loginUser,
+  logoutUser,
+  uploadAvatar,
+  getAllUsersList,
+  updateProfile,
+  fetchUserDetails
+};

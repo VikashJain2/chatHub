@@ -84,12 +84,12 @@ const InviteModal = ({
                         key={user.id}
                         className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"
                       >
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-3 w-[50px] h-[50px]">
                           {user?.avatar ? (
                             <img
                               src={user.avatar}
                               alt={`${user.firstName} ${user.lastName}`}
-                              className="w-full h-full object-cover"
+                              className="w-full h-full rounded-full object-cover"
                             />
                           ) : (
                             <div className="bg-gray-200 border-2 border-dashed rounded-full w-full h-full flex items-center justify-center">

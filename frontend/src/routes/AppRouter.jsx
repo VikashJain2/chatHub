@@ -2,7 +2,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import AuthForm from "../components/AuthForm";
 import App from "../App";
 import ChatApp from '../components/Chat';
-
+import {Toaster} from 'react-hot-toast'
 const routes  = [
     {
         path: "/",
@@ -25,5 +25,9 @@ const routes  = [
 const router = createBrowserRouter(routes)
 
 export default function AppRouter(){
-    return <RouterProvider router={router}/>
+    return <>
+      <Toaster position='bottom-right'/>
+    <RouterProvider router={router}/>
+    </>
+
 }

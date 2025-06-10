@@ -76,6 +76,8 @@ const createInvitation = async (req, res) => {
     );
     await redisClient.lTrim(`notifications:${inviteeId}`, 0, 99);
 
+    console.log("invitation to--->",`user:${inviteeId}`)
+    console.log("Rooms:", io.sockets.adapter.rooms);
     io.to(`user:${inviteeId}`).emit('invite-notification', notification)
     
     return res.status(200).json({
