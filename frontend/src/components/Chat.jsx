@@ -67,7 +67,7 @@ const ChatApp = () => {
       setNotifications((prev)=> [data,...prev])
     }
     socket.on("invite-notification",handleNewNotification)
-
+    socket.on("invite-accepted", handleNewNotification)
     return ()=>{
       socket.off("invite-notification", handleNewNotification)
     }

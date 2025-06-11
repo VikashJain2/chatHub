@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Bars3Icon, BellIcon, EnvelopeIcon, PhoneIcon, TrashIcon, VideoCameraIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 const Header = ({
@@ -11,6 +11,9 @@ const Header = ({
   deleteNotification,
   copyToClipboard,
 }) => {
+    useEffect(()=>{
+    console.log(notifications)
+  },[notifications])
   const notificationRef = useRef(null);
 
   return (
@@ -88,7 +91,7 @@ const Header = ({
                           `Sent invitation to ${notification.userName}`} */}
                         {notification.type === 'invitation_sent' &&
                           `Received invitation from ${notification.userName}`}
-                        {notification.type === 'invitation_received' &&
+                        {notification.type === 'invitation_accepted' &&
                           `${notification.userName} accepted your invitation`}
                       </span>
                     </div>
@@ -96,7 +99,7 @@ const Header = ({
                     <div className="flex gap-2 items-center flex-wrap">
                       {notification.type === 'invitation_sent' && (
                         <button
-                          onClick={() => handleAcceptInvitation(notification)}
+                          onClick={() => handleAcceptInvitation(notification.invitation_id, notification.id)}
                           className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium transition-all"
                         >
                           Accept

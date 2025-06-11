@@ -1,7 +1,10 @@
 
 import { EnvelopeIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { useEffect } from 'react'
 
 const NotificationModal = ({setShowNotifications, notifications,handleAcceptInvitation,copyToClipboard,deleteNotification}) => {
+
+
   return (
      <div className="md:absolute md:top-12 md:right-0 fixed inset-0 md:inset-auto md:w-96 bg-white md:border md:border-gray-200 rounded-xl md:shadow-2xl z-50 md:max-h-96 md:overflow-y-auto animate-fade-in-up flex flex-col">
                 <div className="p-5 border-b border-gray-200 flex justify-between items-center">

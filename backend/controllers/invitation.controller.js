@@ -54,8 +54,9 @@ const createInvitation = async (req, res) => {
       [inviterId]
     );
 
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
     const notificationResult = await createNotification(
+      connection,
       "invitation_sent",
       inviterId,
       inviteeId,
@@ -111,7 +112,7 @@ const acceptInvitation = async (req, res) => {
     await connection.beginTransaction();
 
     const [invitations] = await connection.query(
-      "SELECT * FROM invitations WHERE id = ? AND invitee_id = ? AND status = 'pending'",
+      "SELECT * FROM invitations WHERE id = ? AND invitee_id = ? AND status = 'pending' FOR UPDATE",
       [invitation_id, userId]
     );
 
@@ -126,6 +127,22 @@ const acceptInvitation = async (req, res) => {
     const invitation = invitations[0];
     const inviterId = invitation.inviter_id;
 
+    const [existingFriends] = await connection.query(
+      `SELECT 1 FROM user_friends 
+       WHERE (user_id = ? AND friend_id = ?)
+          OR (user_id = ? AND friend_id = ?)
+       LIMIT 1 FOR UPDATE`,
+      [inviterId, userId, userId, inviterId]
+    );
+
+    if (existingFriends.length > 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({
+        success: false,
+        message: "You are already friends with this user",
+      });
+    }
     await connection.query(
       "UPDATE invitations SET status='accepted' WHERE id = ?",
       [invitation_id]
@@ -136,14 +153,15 @@ const acceptInvitation = async (req, res) => {
       [invitation_id]
     );
 
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
 
     await connection.query(
       "INSERT INTO user_friends (user_id, friend_id) VALUES (?, ?), (?, ?)",
       [inviterId, userId, userId, inviterId]
     );
 
-    const [notificationResult] = createNotification(
+    const notificationResult = await createNotification(
+      connection,
       "invitation_accepted",
       userId,
       inviterId,
@@ -152,7 +170,7 @@ const acceptInvitation = async (req, res) => {
     );
 
     const [accepter] = await connection.query(
-      "SELECT (firstName, ' ', lastName) AS userName FROM user WHERE id = ?",
+      "SELECT CONCAT(firstName, ' ', lastName) AS userName FROM user WHERE id = ?",
       [userId]
     );
 
@@ -186,7 +204,7 @@ const acceptInvitation = async (req, res) => {
         await redisClient.del(inviteeKey);
 
         if (updatedInviteeNotifications.length > 0) {
-          await redisClient.rPush(inviteeKey, updatedInviteeNotifications);
+          await redisClient.rPush(inviteeKey, ...updatedInviteeNotifications);
         }
       }
 
@@ -196,7 +214,7 @@ const acceptInvitation = async (req, res) => {
       await redisClient.expire(inviteeKey, 180);
       await redisClient.lTrim(inviterKey, 0, 99);
 
-      io.to(`user:${inviterId}`).emit("invite-accepted", notification)
+      io.to(`user:${inviterId}`).emit("invite-accepted", notification);
     } catch (redisError) {
       console.error("Redis operation failed:", redisError);
     }
@@ -205,13 +223,12 @@ const acceptInvitation = async (req, res) => {
       .status(200)
       .json({ success: true, message: "Invitation Accepted SuccessFully" });
   } catch (error) {
+    console.log(error);
     if (connection) await connection.rollback();
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Failed To Accept Invitation",
-      });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed To Accept Invitation",
+    });
   } finally {
     if (connection) connection.release();
   }

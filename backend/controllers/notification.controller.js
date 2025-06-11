@@ -1,21 +1,24 @@
 import db from "../config/db.js";
 import { redisClient } from "../config/redis.js";
-import {v4 as uuidv4} from 'uuid'
-const createNotification = async (type, inviterId, inviteeId, invitationId,timestamp) => {
-  let connection;
+import { v4 as uuidv4 } from "uuid";
+const createNotification = async (
+  connection,
+  type,
+  inviterId,
+  inviteeId,
+  invitationId,
+  timestamp
+) => {
   try {
-    connection = await db.getConnection();
-    let id = uuidv4()
+    let id = uuidv4();
     const [notificationResult] = await connection.query(
       "INSERT INTO notifications (id,type,user_id,related_user_id,invitation_id,timestamp) VALUES(?,?,?,?,?,?)",
-      [id,type, inviterId, inviteeId, invitationId,timestamp]
+      [id, type, inviterId, inviteeId, invitationId, timestamp]
     );
 
     return notificationResult;
   } catch (error) {
     throw new Error(error);
-  } finally {
-    if (connection) connection.release();
   }
 };
 
@@ -63,9 +66,7 @@ const fetchAllNotifications = async (req, res) => {
       await redisClient.expire(cacheKey, 60); // optional TTL
     }
 
-    return res
-      .status(200)
-      .json({ success: true, data: notifications });
+    return res.status(200).json({ success: true, data: notifications });
   } catch (error) {
     console.log(error);
     return res
@@ -76,5 +77,66 @@ const fetchAllNotifications = async (req, res) => {
   }
 };
 
+const deleteNotification = async (req, res) => {
+  let connection;
+  try {
+    const { userId } = req.user;
+    const { notificationId } = req.params;
 
-export { createNotification, fetchAllNotifications };
+    if (!userId) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (!notificationId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Notification id is required" });
+    }
+
+    connection = await db.getConnection();
+
+    const [result] = await connection.query(
+      "DELETE FROM notifications WHERE id = ?",
+      [notificationId]
+    );
+
+    if (result.affectedRows === 0) {
+      connection.release();
+      return res
+        .status(404)
+        .json({ success: false, message: "Notification not found" });
+    }
+
+    connection.release();
+
+    const redisKey = `notifications:${userId}`;
+    const userNotifications = await redisClient.lRange(redisKey, 0, -1);
+
+    const updatedNotifications = userNotifications.filter((notifStr) => {
+      const notif = JSON.parse(notifStr);
+      return notif.id != notificationId; // loose comparison is OK
+    });
+
+    if (updatedNotifications.length !== userNotifications.length) {
+      await redisClient.del(redisKey);
+      if (updatedNotifications.length > 0) {
+        await redisClient.rPush(redisKey, ...updatedNotifications); // Use spread
+      }
+      await redisClient.expire(redisKey, 180);
+      await redisClient.lTrim(redisKey, 0, 99);
+    }
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Notification deleted" });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Something went wrong",
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+export { createNotification, fetchAllNotifications, deleteNotification };
