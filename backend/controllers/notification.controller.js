@@ -1,14 +1,14 @@
 import db from "../config/db.js";
 import { redisClient } from "../config/redis.js";
 import {v4 as uuidv4} from 'uuid'
-const createNotification = async (type, inviterId, inviteeId, invitationId) => {
+const createNotification = async (type, inviterId, inviteeId, invitationId,timestamp) => {
   let connection;
   try {
     connection = await db.getConnection();
     let id = uuidv4()
     const [notificationResult] = await connection.query(
-      "INSERT INTO notifications (id,type,user_id,related_user_id,invitation_id) VALUES(?,?,?,?,?)",
-      [id,type, inviterId, inviteeId, invitationId]
+      "INSERT INTO notifications (id,type,user_id,related_user_id,invitation_id,timestamp) VALUES(?,?,?,?,?,?)",
+      [id,type, inviterId, inviteeId, invitationId,timestamp]
     );
 
     return notificationResult;

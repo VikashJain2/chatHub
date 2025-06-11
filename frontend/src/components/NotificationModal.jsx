@@ -25,31 +25,18 @@ const NotificationModal = ({setShowNotifications, notifications,handleAcceptInvi
                         <div className="flex items-center gap-3 mb-2">
                           <EnvelopeIcon className="w-5 h-5 text-blue-600" />
                           <span className="text-sm font-medium text-gray-900">
-                            {notification.type === "sent" &&
-                              `Sent invitation to ${
-                                notification.firstName +
-                                " " +
-                                notification.lastName
-                              }`}
-                            {notification.type === "received" &&
-                              `Received invitation from ${
-                                notification.firstName +
-                                " " +
-                                notification.lastName
-                              }`}
-                            {notification.type === "accepted" &&
-                              `${
-                                notification.firstName +
-                                " " +
-                                notification.lastName
-                              } accepted your invitation`}
+
+                            {notification.type === "invitation_sent" &&
+                              `Received invitation from ${notification.userName}`}
+                            {notification.type === "invitation_accepted" &&
+                              `${notification.userName} accepted your invitation`}
                           </span>
                         </div>
                         <p className="text-xs text-gray-500 mb-3">
                           {notification.timestamp}
                         </p>
                         <div className="flex gap-2 items-center flex-wrap">
-                          {notification.type === "received" && (
+                          {notification.type === "invitation_sent" && (
                             <button
                               onClick={() =>
                                 handleAcceptInvitation(notification)

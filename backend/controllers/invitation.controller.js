@@ -1,11 +1,11 @@
 import db from "../config/db.js";
 import { redisClient } from "../config/redis.js";
 import { createNotification } from "./notification.controller.js";
-import {v4 as uuidv4} from 'uuid'
+import { v4 as uuidv4 } from "uuid";
 const createInvitation = async (req, res) => {
   let connection;
   try {
-    const io  = req.app.get("io")
+    const io = req.app.get("io");
     connection = await db.getConnection();
     const { inviteeId } = req.params;
 
@@ -42,11 +42,11 @@ const createInvitation = async (req, res) => {
         message: "Invitation Already Exist And Pending",
       });
     }
-    let id = uuidv4()
+    let id = uuidv4();
 
     const [inviteResult] = await connection.query(
       "INSERT INTO invitations (id,inviter_id,invitee_id) VALUES(?,?, ?)",
-      [id,inviterId, inviteeId]
+      [id, inviterId, inviteeId]
     );
 
     const [userName] = await connection.query(
@@ -54,11 +54,13 @@ const createInvitation = async (req, res) => {
       [inviterId]
     );
 
+    const timestamp = new Date().toISOString();
     const notificationResult = await createNotification(
       "invitation_sent",
       inviterId,
       inviteeId,
-      id
+      id,
+      timestamp
     );
 
     const notification = {
@@ -75,11 +77,9 @@ const createInvitation = async (req, res) => {
       JSON.stringify(notification)
     );
     await redisClient.lTrim(`notifications:${inviteeId}`, 0, 99);
+    await redisClient.expire(`notifications:${inviteeId}`, 180);
+    io.to(`user:${inviteeId}`).emit("invite-notification", notification);
 
-    console.log("invitation to--->",`user:${inviteeId}`)
-    console.log("Rooms:", io.sockets.adapter.rooms);
-    io.to(`user:${inviteeId}`).emit('invite-notification', notification)
-    
     return res.status(200).json({
       success: true,
       message: "Invitation sent SuccessFully",
@@ -90,9 +90,131 @@ const createInvitation = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, message: error.message || error });
-  } finally{
-    if(connection) connection.release()
+  } finally {
+    if (connection) connection.release();
   }
 };
 
-export { createInvitation };
+const acceptInvitation = async (req, res) => {
+  let connection;
+  try {
+    const io = req.app.get("io");
+    const { userId } = req.user;
+    const { invitation_id } = req.params;
+    if (!userId) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not Authenticated" });
+    }
+
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    const [invitations] = await connection.query(
+      "SELECT * FROM invitations WHERE id = ? AND invitee_id = ? AND status = 'pending'",
+      [invitation_id, userId]
+    );
+
+    if (invitations.length === 0) {
+      connection.release();
+      return res.status(404).json({
+        success: false,
+        message: "Invitation Not Found Or Already Processed",
+      });
+    }
+
+    const invitation = invitations[0];
+    const inviterId = invitation.inviter_id;
+
+    await connection.query(
+      "UPDATE invitations SET status='accepted' WHERE id = ?",
+      [invitation_id]
+    );
+
+    await connection.query(
+      "DELETE FROM notifications WHERE invitation_id = ? AND type = 'invitation_sent'",
+      [invitation_id]
+    );
+
+    const timestamp = new Date().toISOString();
+
+    await connection.query(
+      "INSERT INTO user_friends (user_id, friend_id) VALUES (?, ?), (?, ?)",
+      [inviterId, userId, userId, inviterId]
+    );
+
+    const [notificationResult] = createNotification(
+      "invitation_accepted",
+      userId,
+      inviterId,
+      invitation_id,
+      timestamp
+    );
+
+    const [accepter] = await connection.query(
+      "SELECT (firstName, ' ', lastName) AS userName FROM user WHERE id = ?",
+      [userId]
+    );
+
+    const notification = {
+      id: notificationResult.insertId,
+      type: "invitation_accepted",
+      user_id: userId,
+      related_user_id: inviterId,
+      invitation_id: invitation_id,
+      timestamp: timestamp,
+      userName: accepter[0].userName,
+    };
+
+    await connection.commit();
+
+    try {
+      const inviteeKey = `notifications:${userId}`;
+      const inviteeNotifications = await redisClient.lRange(inviteeKey, 0, -1);
+
+      const updatedInviteeNotifications = inviteeNotifications.filter(
+        (notifStr) => {
+          const notif = JSON.parse(notifStr);
+          return !(
+            notif.type === "invitation_sent" &&
+            notif.invitation_id === invitation_id
+          );
+        }
+      );
+
+      if (updatedInviteeNotifications.length !== inviteeNotifications.length) {
+        await redisClient.del(inviteeKey);
+
+        if (updatedInviteeNotifications.length > 0) {
+          await redisClient.rPush(inviteeKey, updatedInviteeNotifications);
+        }
+      }
+
+      const inviterKey = `notifications:${inviterId}`;
+
+      await redisClient.lPush(inviterKey, JSON.stringify(notification));
+      await redisClient.expire(inviteeKey, 180);
+      await redisClient.lTrim(inviterKey, 0, 99);
+
+      io.to(`user:${inviterId}`).emit("invite-accepted", notification)
+    } catch (redisError) {
+      console.error("Redis operation failed:", redisError);
+    }
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Invitation Accepted SuccessFully" });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Failed To Accept Invitation",
+      });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+export { createInvitation, acceptInvitation };
