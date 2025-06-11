@@ -39,7 +39,7 @@ const NotificationModal = ({setShowNotifications, notifications,handleAcceptInvi
                           {notification.type === "invitation_sent" && (
                             <button
                               onClick={() =>
-                                handleAcceptInvitation(notification)
+                                handleAcceptInvitation(notification.invitation_id, notification.id)
                               }
                               className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium transition-all"
                             >

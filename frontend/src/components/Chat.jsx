@@ -64,7 +64,6 @@ const ChatApp = () => {
       return
     }
     const handleNewNotification = (data)=>{
-      console.log("new Notification data-->", data)
       setNotifications((prev)=> [data,...prev])
     }
     socket.on("invite-notification",handleNewNotification)
@@ -141,33 +140,39 @@ const ChatApp = () => {
     );
   }, []);
 
-  const handleAcceptInvitation = useCallback(
-    (notification) => {
-      const newUser = {
-        id: users.length + 1,
-        firstName: notification.firstName,
-        lastName: notification.lastName,
-        email: notification.email,
-        avatar: `https://i.pravatar.cc/150?img=${users.length + 1}`,
-      };
-      setUsers((prevUsers) => [...prevUsers, newUser]);
-      const acceptedNotification = {
-        id: notifications.length + 1,
-        type: "invitation_sent",
-        firstName: notification.firstName,
-        lastName: notification.lastName,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
-      setNotifications((prevNotifications) => [
-        ...prevNotifications.filter((n) => n.id !== notification.id),
-        acceptedNotification,
-      ]);
-    },
-    [users, notifications]
-  );
+  const handleAcceptInvitation =
+    async(invitationId, notificationId) => {
+      try {
+          const response = await axios.patch(`${BASE_URL}/invitation/accept/${invitationId}`,{},{withCredentials: true})
+
+          if(response.data.success){
+            toast.success(response.data.message)
+            setNotifications((prevNotifications)=>[...prevNotifications.filter((n)=> n.id !== notificationId)])
+          }
+      } catch (error) {
+        if(error.response){
+          toast.error(error.response.data.message)
+        }else{
+          toast.error("Something went wrong")
+        }
+      }
+     
+      // setUsers((prevUsers) => [...prevUsers, newUser]);
+      // const acceptedNotification = {
+      //   id: notifications.length + 1,
+      //   type: "invitation_sent",
+      //   firstName: notification.firstName,
+      //   lastName: notification.lastName,
+      //   timestamp: new Date().toLocaleTimeString([], {
+      //     hour: "2-digit",
+      //     minute: "2-digit",
+      //   }),
+      // };
+      // setNotifications((prevNotifications) => [
+      //   ...prevNotifications.filter((n) => n.id !== notification.id),
+      //   acceptedNotification,
+      // ]);
+    }
 
   const handleEmojiClick = useCallback(
     (emojiObject) => {
