@@ -368,6 +368,75 @@ const fetchUserDetails = async (req, res) => {
     if (connection) connection.release();
   }
 };
+
+const fetchFriends = async (req, res) => {
+  let connection;
+  try {
+    const { userId } = req.user;
+
+    if (!userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const cacheKey = `user:friends:${userId}`;
+
+    // Check Redis cache
+    const existInCache = await redisClient.get(cacheKey);
+    if (existInCache) {
+      const parsedFriends = JSON.parse(existInCache);
+      return res.status(200).json({
+        success: true,
+        friends: parsedFriends,
+        cached: true,
+      });
+    }
+
+    // If not cached, fetch from DB
+    connection = await db.getConnection();
+
+    const [userFriends] = await connection.query(
+      `
+      SELECT 
+        u.id AS friendId,
+        u.firstName,
+        u.lastName,
+        u.email,
+        u.profilePicture,
+        u.status,
+        f.created_at AS friendshipStartedAt
+      FROM user_friends f
+      JOIN user u ON u.id = f.friend_id
+      WHERE f.user_id = ?
+      `,
+      [userId]
+    );
+
+    // Store result in Redis cache for 5 minutes
+    await redisClient.setEx(
+      cacheKey,
+      300, // expires in 300 seconds (5 minutes)
+      JSON.stringify(userFriends)
+    );
+
+    return res.status(200).json({
+      success: true,
+      friends: userFriends,
+      cached: false,
+    });
+  } catch (error) {
+    console.error("Error fetching friends:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
 export {
   createUser,
   loginUser,
@@ -375,5 +444,6 @@ export {
   uploadAvatar,
   getAllUsersList,
   updateProfile,
-  fetchUserDetails
+  fetchUserDetails,
+  fetchFriends
 };

@@ -1,5 +1,5 @@
 import express from 'express'
-import { createUser, fetchUserDetails, getAllUsersList, loginUser, logoutUser, updateProfile, uploadAvatar } from '../controllers/user.controller.js'
+import { createUser, fetchFriends, fetchUserDetails, getAllUsersList, loginUser, logoutUser, updateProfile, uploadAvatar } from '../controllers/user.controller.js'
 import verifyToken from '../middleware/auth.middleware.js'
 import { upload } from '../middleware/upload.js'
 
@@ -12,4 +12,5 @@ userRouter.put("/upload-avatar", verifyToken, upload.single("avatar"), uploadAva
 userRouter.get("/get-all",verifyToken, getAllUsersList)
 userRouter.put("/update-profile", verifyToken, updateProfile)
 userRouter.get("/get-details", verifyToken, fetchUserDetails)
+userRouter.get("/friends", verifyToken, fetchFriends)
 export default userRouter

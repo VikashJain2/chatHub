@@ -5,7 +5,7 @@ email: "",
 firstName: "",
 id: 0,
 lastName : "",
-avatar: ""
+avatar: "",
 }
 
 const userSlice = createSlice({
