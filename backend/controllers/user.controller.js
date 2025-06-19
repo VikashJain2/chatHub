@@ -7,7 +7,6 @@ import fs from "fs";
 import path from "path";
 import { v4 as uuidv4, v4 } from "uuid";
 const generateToken = (userId) => {
-
   let payload = {
     userId: userId,
   };
@@ -399,18 +398,15 @@ const fetchFriends = async (req, res) => {
 
     const [userFriends] = await connection.query(
       `
-      SELECT 
-        u.id AS friendId,
-        u.firstName,
-        u.lastName,
-        u.email,
-        u.profilePicture,
-        u.status,
-        f.created_at AS friendshipStartedAt
-      FROM user_friends f
-      JOIN user u ON u.id = f.friend_id
-      WHERE f.user_id = ?
-      `,
+  SELECT 
+    u.id AS friendId,
+    CONCAT(u.firstName, ' ', u.lastName) AS userName,
+    u.email,
+    u.avatar
+  FROM user_friends f
+  JOIN user u ON u.id = f.friend_id
+  WHERE f.user_id = ?
+  `,
       [userId]
     );
 
@@ -445,5 +441,5 @@ export {
   getAllUsersList,
   updateProfile,
   fetchUserDetails,
-  fetchFriends
+  fetchFriends,
 };

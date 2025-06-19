@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { ArrowRightOnRectangleIcon, PlusIcon, UserCircleIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 const Sidebar = ({
@@ -13,6 +13,9 @@ const Sidebar = ({
 }) => {
   const sidebarRef = useRef(null);
 
+  useEffect(()=>{
+    console.log("user friends--->",users)
+  },[])
   return (
     <div
       ref={sidebarRef}
@@ -88,13 +91,13 @@ const Sidebar = ({
               <div className="relative flex-shrink-0">
                 <img
                   src={user.avatar}
-                  alt={user.firstName}
+                  alt={user.userName}
                   className="w-12 h-12 rounded-full object-cover shadow-sm ring-2 ring-white transition-transform group-hover:scale-105"
                 />
               </div>
               <div className="ml-4 min-w-0">
                 <h2 className="font-semibold text-gray-900 truncate text-base">
-                  {user.firstName + " " + user.lastName}
+                  {user.userName}
                 </h2>
               </div>
             </div>

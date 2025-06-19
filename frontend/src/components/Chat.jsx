@@ -93,6 +93,7 @@ const ChatApp = () => {
   useEffect(() => {
     setUserDetails(user);
     fetchAllNotifications();
+    fetchUserFriends()
   }, [user]);
 
   useEffect(() => {
@@ -125,6 +126,21 @@ const ChatApp = () => {
   }, []);
 
 
+  const fetchUserFriends = async()=>{
+    try {
+      const response = await axios.get(`${BASE_URL}/user/friends`, {
+        withCredentials: true,
+      });
+      if (response.data.success) {
+        console.log("Fetched user friends:", response.data.data);
+        setUsers(response.data.friends);
+      } else {
+        console.error("Failed to fetch user friends:", response.data.message);
+      }
+    } catch (error) {
+      console.error("Error fetching user friends:", error);
+    }
+  }
   const copyToClipboard = useCallback(async (text) => {
     try {
       await navigator.clipboard.writeText(text);
