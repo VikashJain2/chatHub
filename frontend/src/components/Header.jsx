@@ -30,13 +30,13 @@ const Header = ({
             <div className="relative">
               <img
                 src={selectedUser.avatar}
-                alt={selectedUser.firstName}
+                alt={selectedUser.userName}
                 className="w-12 h-12 rounded-full object-cover shadow-sm ring-2 ring-white"
               />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
-                {selectedUser.firstName + ' ' + selectedUser.lastName}
+                {selectedUser.userName}
               </h2>
             </div>
           </div>

@@ -19,8 +19,6 @@ export function initSocketServer(httpServer) {
     } else {
       console.warn(`Socket ${socket.id} connected without auth userId`);
     }
-
-    // ✅ Explicit `join` event for extra reliability
     socket.on("join", (userId) => {
       if (userId) {
         socket.join(`user:${userId}`);

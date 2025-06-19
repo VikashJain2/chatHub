@@ -12,10 +12,6 @@ const Sidebar = ({
   setShowLogoutModal,
 }) => {
   const sidebarRef = useRef(null);
-
-  useEffect(()=>{
-    console.log("user friends--->",users)
-  },[])
   return (
     <div
       ref={sidebarRef}
@@ -29,7 +25,7 @@ const Sidebar = ({
         <div className="p-6 border-b border-gray-200 bg-gradient-to-br from-blue-600 to-blue-800">
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-2xl font-bold text-white tracking-tight">
-              ChatApp
+              ChatSphere
             </h1>
             <button
               onClick={() => setIsSidebarOpen(false)}
