@@ -20,6 +20,12 @@ export function initSocketServer(httpServer) {
       socket.join(`user:${userId}`);
       onlineUsers.set(userId, socket.id);
       console.log(`User ${userId} connected with socket ${socket.id}`);
+
+      io.emit("user-status-response", {
+        friendId: userId,
+        isOnline: true,
+        lastSeen: null,
+      })
     } else {
       console.warn(`Socket ${socket.id} connected without auth userId`);
     }
@@ -31,6 +37,9 @@ export function initSocketServer(httpServer) {
     });
 
     socket.on("check-user-status", async ({ friendId }) => {
+      console.log(
+        `Checking status for friendId: ${friendId} from socket ${socket.id}`
+      );
       if (onlineUsers.has(friendId)) {
         socket.emit("user-status-response", {
           friendId,
@@ -42,11 +51,12 @@ export function initSocketServer(httpServer) {
           "SELECT last_seen FROM user WHERE id = ?",
           [friendId]
         );
+
         connection.release();
         socket.emit("user-status-response", {
           friendId,
           isOnline: false,
-          lastSeen: row.last_seen || null,
+          lastSeen: row[0].last_seen || null,
         });
       }
     });
@@ -54,12 +64,19 @@ export function initSocketServer(httpServer) {
     socket.on("disconnect", async () => {
       if (userId) {
         onlineUsers.delete(userId);
+
         connection = await db.getConnection();
 
         await connection.query("UPDATE user SET last_seen = ? WHERE id = ?", [
           new Date(),
           userId,
         ]);
+
+        io.emit("user-status-response", {
+          friendId: userId,
+          isOnline: false,
+          lastSeen: new Date(),
+        });
       }
       console.log(`Socket ${socket.id} disconnected`);
     });

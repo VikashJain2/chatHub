@@ -14,7 +14,6 @@ import { updateUser } from "../store/userSlice";
 import toast, { useToaster } from "react-hot-toast";
 
 const ChatApp = () => {
-
   const user = useSelector((state) => state.user);
   const dispatch = useDispatch();
   const socket = useSocket();
@@ -59,19 +58,19 @@ const ChatApp = () => {
     }
   };
 
-  useEffect(()=>{
-    if(!socket){
-      return
+  useEffect(() => {
+    if (!socket) {
+      return;
     }
-    const handleNewNotification = (data)=>{
-      setNotifications((prev)=> [data,...prev])
-    }
-    socket.on("invite-notification",handleNewNotification)
-    socket.on("invite-accepted", handleNewNotification)
-    return ()=>{
-      socket.off("invite-notification", handleNewNotification)
-    }
-  },[socket])
+    const handleNewNotification = (data) => {
+      setNotifications((prev) => [data, ...prev]);
+    };
+    socket.on("invite-notification", handleNewNotification);
+    socket.on("invite-accepted", handleNewNotification);
+    return () => {
+      socket.off("invite-notification", handleNewNotification);
+    };
+  }, [socket]);
 
   useEffect(() => {
     scrollToBottom();
@@ -93,7 +92,7 @@ const ChatApp = () => {
   useEffect(() => {
     setUserDetails(user);
     fetchAllNotifications();
-    fetchUserFriends()
+    fetchUserFriends();
   }, [user]);
 
   useEffect(() => {
@@ -125,8 +124,7 @@ const ChatApp = () => {
     };
   }, []);
 
-
-  const fetchUserFriends = async()=>{
+  const fetchUserFriends = async () => {
     try {
       const response = await axios.get(`${BASE_URL}/user/friends`, {
         withCredentials: true,
@@ -140,7 +138,7 @@ const ChatApp = () => {
     } catch (error) {
       console.error("Error fetching user friends:", error);
     }
-  }
+  };
   const copyToClipboard = useCallback(async (text) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -150,53 +148,72 @@ const ChatApp = () => {
     }
   }, []);
 
-  const deleteNotification = useCallback((notificationId) => {
-    setNotifications((prevNotifications) =>
-      prevNotifications.filter((notification) => notification.id !== notificationId)
-    );
+  const deleteNotification = useCallback(async (notificationId) => {
+    try {
+      const response = await axios.delete(
+        `${BASE_URL}/notifications/delete/${notificationId}`,{withCredentials: true}
+      );
+      if (response.data.success) {
+        toast.success(response.data.message);
+        setNotifications((prevNotifications) =>
+          prevNotifications.filter(
+            (notification) => notification.id !== notificationId
+          )
+        );
+      } else {
+        toast.error(response.data.message);
+      }
+    } catch (error) {
+      console.log("Error deleting notification:", error);
+      if (error.response) {
+        toast.error(error.response.data.message);
+      }
+    }
   }, []);
 
-  const handleAcceptInvitation =
-    async(invitationId, notificationId) => {
-      try {
-          const response = await axios.patch(`${BASE_URL}/invitation/accept/${invitationId}`,{},{withCredentials: true})
+  const handleAcceptInvitation = async (invitationId, notificationId) => {
+    try {
+      const response = await axios.patch(
+        `${BASE_URL}/invitation/accept/${invitationId}`,
+        {},
+        { withCredentials: true }
+      );
 
-          if(response.data.success){
-            toast.success(response.data.message)
-            setNotifications((prevNotifications)=>[...prevNotifications.filter((n)=> n.id !== notificationId)])
-          }
-      } catch (error) {
-        if(error.response){
-          toast.error(error.response.data.message)
-        }else{
-          toast.error("Something went wrong")
-        }
+      if (response.data.success) {
+        toast.success(response.data.message);
+        setNotifications((prevNotifications) => [
+          ...prevNotifications.filter((n) => n.id !== notificationId),
+        ]);
       }
-     
-      // setUsers((prevUsers) => [...prevUsers, newUser]);
-      // const acceptedNotification = {
-      //   id: notifications.length + 1,
-      //   type: "invitation_sent",
-      //   firstName: notification.firstName,
-      //   lastName: notification.lastName,
-      //   timestamp: new Date().toLocaleTimeString([], {
-      //     hour: "2-digit",
-      //     minute: "2-digit",
-      //   }),
-      // };
-      // setNotifications((prevNotifications) => [
-      //   ...prevNotifications.filter((n) => n.id !== notification.id),
-      //   acceptedNotification,
-      // ]);
+    } catch (error) {
+      if (error.response) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error("Something went wrong");
+      }
     }
 
-  const handleEmojiClick = useCallback(
-    (emojiObject) => {
-      setNewMessage((prev) => prev + emojiObject.emoji);
-      setShowEmojiPicker(false);
-    },
-    []
-  );
+    // setUsers((prevUsers) => [...prevUsers, newUser]);
+    // const acceptedNotification = {
+    //   id: notifications.length + 1,
+    //   type: "invitation_sent",
+    //   firstName: notification.firstName,
+    //   lastName: notification.lastName,
+    //   timestamp: new Date().toLocaleTimeString([], {
+    //     hour: "2-digit",
+    //     minute: "2-digit",
+    //   }),
+    // };
+    // setNotifications((prevNotifications) => [
+    //   ...prevNotifications.filter((n) => n.id !== notification.id),
+    //   acceptedNotification,
+    // ]);
+  };
+
+  const handleEmojiClick = useCallback((emojiObject) => {
+    setNewMessage((prev) => prev + emojiObject.emoji);
+    setShowEmojiPicker(false);
+  }, []);
 
   const handleSendMessage = useCallback(() => {
     if (newMessage.trim()) {
@@ -214,29 +231,26 @@ const ChatApp = () => {
     }
   }, [newMessage, messages]);
 
-  const handleSendInvitation = useCallback(
-    async (user) => {
-      setInviteInput(user.firstName + user.lastName);
-      try {
-        const response = await axios.post(
-          `http://localhost:4000/api/v1/invitation/create/${user.id}`,
-          {},
-          { withCredentials: true }
-        );
-        if (response.data.success) {
-          setInvitationSent(true);
-          toast.success(response.data.message);
-        }
-      }  catch (error) {
-      if(error.response){
-        toast.error(error.response.data.message)
-      }else{
-        toast.error("Something Went Wrong. Try Again Letter!")
+  const handleSendInvitation = useCallback(async (user) => {
+    setInviteInput(user.firstName + user.lastName);
+    try {
+      const response = await axios.post(
+        `http://localhost:4000/api/v1/invitation/create/${user.id}`,
+        {},
+        { withCredentials: true }
+      );
+      if (response.data.success) {
+        setInvitationSent(true);
+        toast.success(response.data.message);
+      }
+    } catch (error) {
+      if (error.response) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error("Something Went Wrong. Try Again Letter!");
       }
     }
-    },
-    []
-  );
+  }, []);
 
   const generateInvitationLink = useCallback(() => {
     const mockLink = `https://chatapp.pro/invite/${btoa(
@@ -247,18 +261,17 @@ const ChatApp = () => {
 
   const fetchAllNotifications = useCallback(async () => {
     try {
-      const response = await axios.get(
-        `${BASE_URL}/notifications/get`,
-        { withCredentials: true }
-      );
+      const response = await axios.get(`${BASE_URL}/notifications/get`, {
+        withCredentials: true,
+      });
       if (response.data.success) {
         setNotifications(response.data.data);
       }
     } catch (error) {
-      if(error.response){
-        toast.error(error.response.data.message)
-      }else{
-        toast.error("Something Went Wrong. Try Again Letter!")
+      if (error.response) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error("Something Went Wrong. Try Again Letter!");
       }
     }
   }, []);
@@ -281,72 +294,74 @@ const ChatApp = () => {
           } else {
             console.log(response.data.message);
           }
-        }  catch (error) {
-      if(error.response){
-        toast.error(error.response.data.message)
-      }else{
-        toast.error("Something Went Wrong. Try Again Letter!")
-      }
-    }
+        } catch (error) {
+          if (error.response) {
+            toast.error(error.response.data.message);
+          } else {
+            toast.error("Something Went Wrong. Try Again Letter!");
+          }
+        }
       })();
     }, 500);
   }, []);
 
-  const handleUpdateProfile = useCallback(async() => {
+  const handleUpdateProfile =async () => {
     try {
-      const response = await axios.put(`${BASE_URL}/user/update-profile`, userDetails,{
-        withCredentials: true
-      })
+      const response = await axios.put(
+        `${BASE_URL}/user/update-profile`,
+        {userDetails},
+        {
+          withCredentials: true,
+        }
+      );
 
-      if(response.data.success){
-        toast.success(response.data.message)
-        dispatch(updateUser(response.data.user))
-        showProfileModal(false)
+      if (response.data.success) {
+        toast.success(response.data.message);
+        dispatch(updateUser(response.data.user));
+        setShowProfileModal(false);
       }
-    }  catch (error) {
-      if(error.response){
-        toast.error(error.response.data.message)
-      }else{
-        toast.error("Something Went Wrong. Try Again Letter!")
+    } catch (error) {
+      console.log("Error updating profile:", error);
+      if (error.response) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error("Something Went Wrong. Try Again Letter!");
       }
+    }
+  }
+
+  const handleImageUpload = useCallback(async (event) => {
+    const file = event?.target?.files?.[0];
+    if (!file) {
+      alert("Please Select A file");
+      return;
+    }
+
+    let formData = new FormData();
+    formData.append("avatar", file);
+
+    try {
+      const response = await axios.put(
+        `${BASE_URL}/user/upload-avatar`,
+        formData,
+        {
+          withCredentials: true,
+        }
+      );
+
+      if (response.data.success) {
+        toast.success(response.data.message);
+        dispatch(updateUser({ avatar: response.data.avatarUrl.secure_url }));
+      }
+    } catch (error) {
+      if (error.response) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error("Something Went Wrong. Try Again Letter!");
+      }
+      console.log(error);
     }
   }, []);
-
-  const handleImageUpload = useCallback(
-    async (event) => {
-      const file = event?.target?.files?.[0];
-      if (!file) {
-        alert("Please Select A file");
-        return;
-      }
-
-      let formData = new FormData();
-      formData.append("avatar", file);
-
-    try {
-        const response = await axios.put(
-          `${BASE_URL}/user/upload-avatar`,
-          formData,
-          {
-            withCredentials: true,
-          }
-        );
-  
-        if (response.data.success) {
-          toast.success(response.data.message)
-          dispatch(updateUser({avatar:response.data.avatarUrl.secure_url}));
-        }
-    } catch (error) {
-      if(error.response){
-        toast.error(error.response.data.message)
-      }else{
-        toast.error("Something Went Wrong. Try Again Letter!")
-      }
-      console.log(error)
-    }
-    },
-    []
-  );
 
   const handleLogout = useCallback(() => {
     console.log("User logged out");

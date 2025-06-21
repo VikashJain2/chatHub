@@ -263,7 +263,7 @@ const updateProfile = async (req, res) => {
   let connection;
   try {
     const userId = req.user.userId;
-    const { firstName, lastName, email } = req.body;
+    const { firstName, lastName, email } = req.body.userDetails;
     if (!userId) {
       return res.status(400).json({ success: false, message: "UnAuthorized" });
     }
@@ -286,8 +286,9 @@ const updateProfile = async (req, res) => {
       [userId]
     );
 
-    return res.status(200).json({ success: true, user: updatedUser[0] });
+    return res.status(200).json({ success: true, user: updatedUser[0], message: "Profile Updated Successfully" });
   } catch (error) {
+    console.error("Error updating profile:", error);
     return res
       .status(500)
       .json({ success: false, message: error.message || error });
