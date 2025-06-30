@@ -1,11 +1,12 @@
 import { useRef, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 
 
 
 const MessageList= ({ messages, selectedUser, users }) => {
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
-
+  const myDetails = useSelector((state)=> state.user)
   const scrollToBottom = () => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTo({
@@ -20,7 +21,7 @@ const MessageList= ({ messages, selectedUser, users }) => {
   }, [messages]);
 
    useEffect(()=>{
-    console.log("inside messagelist-->",selectedUser, users)
+    console.log("My Details--->", myDetails)
   })
  
   return (
@@ -49,11 +50,14 @@ const MessageList= ({ messages, selectedUser, users }) => {
               </p>
             </div>
             {message.sender === 'user' && (
+              <>
+              <p>{myDetails.userName}</p>
               <img
-                src={users[0].avatar}
+                src={myDetails.avatar}
                 alt="You"
                 className="w-10 h-10 rounded-full object-cover mt-2 shadow-sm"
-              />
+                />
+                </>
             )}
           </div>
         ))}

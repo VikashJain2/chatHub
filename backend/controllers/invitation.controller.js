@@ -1,7 +1,7 @@
 import db from "../config/db.js";
 import { redisClient } from "../config/redis.js";
 import { createNotification } from "./notification.controller.js";
-import { v4 as uuidv4 } from "uuid";
+import { parse, v4 as uuidv4 } from "uuid";
 const createInvitation = async (req, res) => {
   let connection;
   try {
@@ -187,6 +187,33 @@ const acceptInvitation = async (req, res) => {
     await connection.commit();
 
     try {
+      const inviterCacheKey = `user:friends:${inviterId}`
+      const updateCache = await redisClient.get(inviterCacheKey)
+
+      const parsedFriends = JSON.parse(updateCache)
+
+      const [newFriendRow] = await connection.query("SELECT id AS friendId, CONCAT(firstName,' ',lastName) AS userName,email, avatar FROM user WHERE id = ?", [userId])
+
+      if(newFriendRow.length > 0){
+        const newFriend = newFriendRow[0];
+        parsedFriends.push(newFriend);
+
+    await redisClient.setEx(inviterCacheKey, 300, JSON.stringify(parsedFriends));
+      }
+
+      const inviteeCacheKey = `user:friends:${userId}`
+      const updateInviteeCache = await redisClient.get(inviteeCacheKey);
+
+      const parsedInviteeFriends = JSON.parse(updateInviteeCache)
+      const [inviter] = await connection.query("SELECT id AS friendId, CONCAT(firstName,' ',lastName) AS userName,email, avatar FROM user WHERE id = ?", [inviterId])
+
+       if(inviter.length > 0){
+        const newFriend = inviter[0];
+        parsedInviteeFriends.push(newFriend);
+
+    await redisClient.setEx(inviteeCacheKey, 300, JSON.stringify(parsedInviteeFriends));
+       }
+
       const inviteeKey = `notifications:${userId}`;
       const inviteeNotifications = await redisClient.lRange(inviteeKey, 0, -1);
 
