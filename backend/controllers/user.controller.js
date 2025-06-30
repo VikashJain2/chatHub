@@ -245,6 +245,10 @@ const uploadAvatar = async (req, res) => {
       userId,
     ]);
 
+   const cacheKey = `user:friends:${userId}`
+
+   
+
     connection.release();
 
     return res.status(200).json({
@@ -285,6 +289,11 @@ const updateProfile = async (req, res) => {
       "SELECT * FROM user WHERE id=?",
       [userId]
     );
+
+    const cacheKey = `user:friends:${userId}`
+
+    
+
 
     return res.status(200).json({ success: true, user: updatedUser[0], message: "Profile Updated Successfully" });
   } catch (error) {

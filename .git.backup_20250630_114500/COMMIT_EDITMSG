@@ -1,0 +1,2 @@
+Refactor user profile update logic to use nested userDetails object; enhance response message and error logging
+implement socket functionality to check user status e.g. online or offline

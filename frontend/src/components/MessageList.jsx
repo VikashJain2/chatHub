@@ -19,6 +19,10 @@ const MessageList= ({ messages, selectedUser, users }) => {
     scrollToBottom();
   }, [messages]);
 
+   useEffect(()=>{
+    console.log("inside messagelist-->",selectedUser, users)
+  })
+ 
   return (
     <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 bg-gray-100">
       <div className="max-w-3xl mx-auto space-y-4">

@@ -36,6 +36,17 @@ export function initSocketServer(httpServer) {
       }
     });
 
+    socket.on("join-room", (user1, user2)=>{
+      console.log(user1, user2)
+      if(user1 && user2){
+        const roomId = `${user1}-${user2}`
+
+        socket.join(roomId)
+
+        socket.emit("room-joined", roomId)
+      }
+    })
+
     socket.on("check-user-status", async ({ friendId }) => {
       console.log(
         `Checking status for friendId: ${friendId} from socket ${socket.id}`
