@@ -59,16 +59,7 @@ const ChatApp = () => {
     socket.on("invite-notification", handleNewNotification);
     socket.on("invite-accepted", handleNewNotification);
     socket.on("message-inserted",(data)=>{
-      console.log("Data of message--->",data)
-      // setMessages(prevMessages => [...prevMessages, data])
-      setMessages((prevMessages)=> {
-        const existMessages = prevMessages.some((msg)=> msg.id === data.id)
-        if(!existMessages){
-         return [...prevMessages, data]
-        }else{
-          return prevMessages
-        }
-      })
+      setMessages((prevMessages)=> [...prevMessages, data])
     })
     return () => {
       socket.off("invite-notification", handleNewNotification);
@@ -256,7 +247,17 @@ const ChatApp = () => {
         })
 
         if(response.data.success){
-       setMessages((prevMessages) => [...prevMessages, response.data.insertedMessageInDB]);
+      //  setMessages((prevMessages) => [...prevMessages, response.data.insertedMessageInDB]);
+
+      setMessages((prevMessages)=> {
+      
+        const existMessages = prevMessages.some((msg)=> msg.id === response.data.insertedMessageInDB.id)
+        if(!existMessages){
+         return [...prevMessages, response.data.insertedMessageInDB]
+        }else{
+          return prevMessages
+        }
+      })
        setNewMessage("");
         }
       } catch (error) {
