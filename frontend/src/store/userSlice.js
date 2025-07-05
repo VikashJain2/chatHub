@@ -6,6 +6,7 @@ firstName: "",
 id: 0,
 lastName : "",
 avatar: "",
+roomId: "",
 }
 
 const userSlice = createSlice({

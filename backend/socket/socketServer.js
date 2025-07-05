@@ -1,5 +1,6 @@
 import { Server } from "socket.io";
 import db from "../config/db.js";
+import { generateRoomId } from "../utils/generateRoomId.js";
 let io;
 
 export function initSocketServer(httpServer) {
@@ -12,7 +13,6 @@ export function initSocketServer(httpServer) {
   });
 
   const onlineUsers = new Map();
-
   io.on("connection", (socket) => {
     const userId = socket.handshake?.auth?.userId;
 
@@ -25,7 +25,7 @@ export function initSocketServer(httpServer) {
         friendId: userId,
         isOnline: true,
         lastSeen: null,
-      })
+      });
     } else {
       console.warn(`Socket ${socket.id} connected without auth userId`);
     }
@@ -36,16 +36,16 @@ export function initSocketServer(httpServer) {
       }
     });
 
-    socket.on("join-room", (user1, user2)=>{
-      console.log(user1, user2)
-      if(user1 && user2){
-        const roomId = `${user1}-${user2}`
+    socket.on("join-room", (user1, user2) => {
+      if (user1 && user2) {
+        
+        const roomId = generateRoomId(user1, user2);
+        console.log("roomId--->",roomId);
+        socket.join(roomId);
 
-        socket.join(roomId)
-
-        socket.emit("room-joined", roomId)
+        socket.emit("room-joined", roomId);
       }
-    })
+    });
 
     socket.on("check-user-status", async ({ friendId }) => {
       console.log(

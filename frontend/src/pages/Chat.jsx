@@ -11,22 +11,13 @@ import WelcomeScreen from "../components/WelcomeScreen";
 import { useSocket } from "../socket/socket";
 import { useDispatch, useSelector } from "react-redux";
 import { updateUser } from "../store/userSlice";
-import toast, { useToaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 const ChatApp = () => {
   const user = useSelector((state) => state.user);
   const dispatch = useDispatch();
   const socket = useSocket();
-  const [messages, setMessages] = useState([
-    { id: 1, text: "Hello there! 👋", sender: "other", timestamp: "09:41" },
-    { id: 2, text: "Hi! How are you?", sender: "user", timestamp: "09:42" },
-    {
-      id: 3,
-      text: "Ready for our meeting today? 🚀",
-      sender: "other",
-      timestamp: "09:45",
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -67,9 +58,22 @@ const ChatApp = () => {
     };
     socket.on("invite-notification", handleNewNotification);
     socket.on("invite-accepted", handleNewNotification);
+    socket.on("message-inserted",(data)=>{
+      console.log("Data of message--->",data)
+      // setMessages(prevMessages => [...prevMessages, data])
+      setMessages((prevMessages)=> {
+        const existMessages = prevMessages.some((msg)=> msg.id === data.id)
+        if(!existMessages){
+         return [...prevMessages, data]
+        }else{
+          return prevMessages
+        }
+      })
+    })
     return () => {
       socket.off("invite-notification", handleNewNotification);
     };
+
   }, [socket]);
 
   useEffect(() => {
@@ -94,6 +98,16 @@ const ChatApp = () => {
     fetchAllNotifications();
     fetchUserFriends();
   }, [user]);
+
+
+  useEffect(()=>{
+    if(!socket && !selectedUser) return;
+    socket.emit("join-room",selectedUser.friendId,user.id)
+
+    socket.on("room-joined", (data)=>{
+      dispatch(updateUser({roomId: data}))
+    })
+  },[selectedUser])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -216,19 +230,43 @@ const ChatApp = () => {
     setShowEmojiPicker(false);
   }, []);
 
-  const handleSendMessage = useCallback(() => {
+  const handleSendMessage = useCallback(async() => {
     if (newMessage.trim()) {
-      const message = {
-        id: messages.length + 1,
-        text: newMessage,
-        sender: "user",
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
-      setMessages((prevMessages) => [...prevMessages, message]);
-      setNewMessage("");
+      // const message = {
+      //   id: messages.length + 1,
+      //   text: newMessage,
+      //   sender: "user",
+      //   timestamp: new Date().toLocaleTimeString([], {
+      //     hour: "2-digit",
+      //     minute: "2-digit",
+      //   }),
+      // };
+
+      let message = {
+        sender_id: user.id,
+        receiver_id: selectedUser.friendId,
+        message: newMessage,
+        room_id: user.roomId,
+        iv: "text123"
+      }
+
+      try {
+        const response = await axios.post(`${BASE_URL}/chat/create`,message, {
+          withCredentials: true
+        })
+
+        if(response.data.success){
+       setMessages((prevMessages) => [...prevMessages, response.data.insertedMessageInDB]);
+       setNewMessage("");
+        }
+      } catch (error) {
+        if(error && error.response){
+          toast.error(error.response.data.message)
+        }else{
+          toast.error("Something went wrong")
+        }
+      }
+    
     }
   }, [newMessage, messages]);
 
