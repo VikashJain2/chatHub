@@ -2,7 +2,6 @@ import db from "../config/db.js"
 import { v4 as uuidv4 } from "uuid";
 const createChat = async(req,res)=>{
     let connection;
-    console.log("req.body", req.body)
     try {
         const io = req.app.get('io');
         const {sender_id, receiver_id, message, iv, room_id} = req.body;
@@ -17,13 +16,7 @@ const createChat = async(req,res)=>{
 
         const [result] = await connection.query("INSERT INTO messages (id,sender_id, receiver_id, message, iv, room_id) VALUES (?,?,?,?,?,?)", [id,sender_id, receiver_id, message, iv, room_id])
 
-        // const messageId = result.insertId;
-
-        // console.log("messageId--->", messageId)
-
         const [insertedMessage] = await connection.query("SELECT * from messages WHERE id = ?", [id]);
-
-        console.log("insertedMessage-->", insertedMessage)
 
         io.to(room_id).emit("message-inserted", insertedMessage[0])
         connection.release()

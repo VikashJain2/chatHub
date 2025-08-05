@@ -160,7 +160,9 @@ const acceptInvitation = async (req, res) => {
       [inviterId, userId, userId, inviterId]
     );
 
+    let notificationId = uuidv4();
     const notificationResult = await createNotification(
+      notificationId,
       connection,
       "invitation_accepted",
       userId,
@@ -175,7 +177,7 @@ const acceptInvitation = async (req, res) => {
     );
 
     const notification = {
-      id: notificationResult.insertId,
+      id: notificationId,
       type: "invitation_accepted",
       user_id: userId,
       related_user_id: inviterId,

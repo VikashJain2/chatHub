@@ -33,12 +33,8 @@ const MessageList = ({ messages, selectedUser, users }) => {
 
   useEffect(() => {
     scrollToBottom();
-    console.log('Message--->', messages);
   }, [messages]);
 
-  useEffect(() => {
-    console.log('My Details--->', myDetails);
-  });
 
   return (
     <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 bg-gray-100">
