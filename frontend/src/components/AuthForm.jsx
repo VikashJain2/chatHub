@@ -6,8 +6,8 @@ import { HiMail, HiUser } from "react-icons/hi";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
-import { setUser } from "../store/userSlice";
-import { encryptPrivateKey, generateECDHKeys } from "../utils/cryptoUtils";
+import { setUser, updateUser } from "../store/userSlice";
+import { decryptPrivateKey, encryptPrivateKey, generateECDHKeys } from "../utils/cryptoUtils";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -106,6 +106,10 @@ export default function AuthForm({ isLogin }) {
       if (response.data.success) {
         alert(response.data.message);
         dispatch(setUser(response.data.data));
+
+        const privateKey = await decryptPrivateKey(response.data.data.encrypted_private_key, response.data.data.encryption_iv, response.data.data.encryption_salt, formData.password);
+
+        dispatch(updateUser({publicKey: response.data.data.public_key, privateKey}));
         navigate(`/chat/${response.data.data?.id}`);
       }
     } catch (error) {

@@ -7,8 +7,7 @@ id: 0,
 lastName : "",
 avatar: "",
 roomId: "",
-iv: "",
-salt: "",
+publicKey: "",
 privateKey: "",
 }
 

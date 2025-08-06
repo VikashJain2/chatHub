@@ -61,7 +61,7 @@ const createUser = async (req, res) => {
     const token = generateToken(id);
 
     const [fullUserData] = await connection.query(
-      "SELECT id, firstName, lastName, email, public_key,encrypted_private_key FROM user WHERE id = ?",
+      "SELECT id, firstName, lastName, email, public_key,encrypted_private_key,encryption_iv,encryption_salt FROM user WHERE id = ?",
       [id]
     );
     connection.release();
@@ -121,7 +121,7 @@ const loginUser = async (req, res) => {
 
       // Return full user (excluding password)
       const [fullUserData] = await connection.query(
-        "SELECT id, firstName, lastName, email, avatar FROM user WHERE id = ?",
+        "SELECT id, firstName, lastName, email, avatar,public_key,encrypted_private_key,encryption_iv,encryption_salt FROM user WHERE id = ?",
         [parsedUser.id]
       );
 
