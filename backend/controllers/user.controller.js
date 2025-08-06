@@ -28,9 +28,9 @@ const cacheUser = async (email, userId, password) => {
 const createUser = async (req, res) => {
   let connection;
   try {
-    const { firstName, password, lastName, email } = req.body;
-
-    if (!firstName || !password || !lastName || !email) {
+    const { firstName, password, lastName, email, publicKey, encryptedPrivateKey, encryption_iv, encryption_salt  } = req.body;
+    console.log("Received data:", req.body);
+    if (!firstName || !password || !lastName || !email || !publicKey || !encryptedPrivateKey || !encryption_iv || !encryption_salt) {
       return res
         .status(400)
         .json({ success: false, message: "All fields are required" });
@@ -52,8 +52,8 @@ const createUser = async (req, res) => {
     const hashPassword = await bcrypt.hash(password, 10);
     let id = uuidv4();
     const [insertedUser] = await connection.query(
-      "insert into user (id,firstName, lastName, email, password) values (?,?,?,?,?)",
-      [id, firstName, lastName, email, hashPassword]
+      "insert into user (id,firstName, lastName, email, password,public_key,encrypted_private_key, encryption_iv,encryption_salt) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, lastName, email, hashPassword, publicKey, encryptedPrivateKey, encryption_iv, encryption_salt]
     );
 
     await cacheUser(email, id, hashPassword);
@@ -61,7 +61,7 @@ const createUser = async (req, res) => {
     const token = generateToken(id);
 
     const [fullUserData] = await connection.query(
-      "SELECT id, firstName, lastName, email FROM user WHERE id = ?",
+      "SELECT id, firstName, lastName, email, public_key,encrypted_private_key FROM user WHERE id = ?",
       [id]
     );
     connection.release();
@@ -79,7 +79,7 @@ const createUser = async (req, res) => {
       });
   } catch (error) {
     if (connection) connection.release();
-
+    console.log(error)
     return res
       .status(500)
       .json({ success: false, error: error.message || error });
@@ -211,6 +211,57 @@ const logoutUser = async (req, res) => {
   }
 };
 
+// const uploadAvatar = async (req, res) => {
+//   let connection;
+//   try {
+//     const userId = req?.user?.userId;
+
+//     if (!userId) {
+//       return res.status(401).json({ success: false, message: "Unauthorized" });
+//     }
+
+//     if (!req.file) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "No file uploaded" });
+//     }
+
+//     const avatarPath = await cloudinary.uploader.upload(req.file.path, {
+//       folder: "chatHub",
+//     });
+
+//     fs.unlinkSync(req.file.path);
+
+//     const uploadDir = path.dirname(req.file.path);
+//     try {
+//       fs.rmdirSync(uploadDir, { recursive: true });
+//     } catch (folderErr) {
+//       console.warn("Failed to remove upload folder:", folderErr.message);
+//     }
+//     connection = await db.getConnection();
+
+//     await connection.query("UPDATE user SET avatar = ? WHERE id = ?", [
+//       avatarPath.secure_url,
+//       userId,
+//     ]);
+
+//    const cacheKey = `user:friends:${userId}`
+
+   
+
+//     connection.release();
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Avatar uploaded successfully",
+//       avatarUrl: avatarPath,
+//     });
+//   } catch (error) {
+//     return res.status(500).json({ success: false, message: error.message });
+//   } finally {
+//     if (connection) connection.release();
+//   }
+// };
 const uploadAvatar = async (req, res) => {
   let connection;
   try {
@@ -231,23 +282,43 @@ const uploadAvatar = async (req, res) => {
     });
 
     fs.unlinkSync(req.file.path);
-
     const uploadDir = path.dirname(req.file.path);
     try {
       fs.rmdirSync(uploadDir, { recursive: true });
     } catch (folderErr) {
       console.warn("Failed to remove upload folder:", folderErr.message);
     }
+
     connection = await db.getConnection();
 
     await connection.query("UPDATE user SET avatar = ? WHERE id = ?", [
       avatarPath.secure_url,
       userId,
     ]);
+    const [updatedUserRows] = await connection.query(
+      "SELECT id AS friendId, CONCAT(firstName, ' ', lastName) AS userName, email, avatar FROM user WHERE id = ?",
+      [userId]
+    );
+    const updatedUser = updatedUserRows[0];
 
-   const cacheKey = `user:friends:${userId}`
+    const [friendIds] = await connection.query(
+      "SELECT user_id FROM user_friends WHERE friend_id = ?",
+      [userId]
+    );
 
-   
+    for (const { user_id: friendId } of friendIds) {
+      const friendCacheKey = `user:friends:${friendId}`;
+      const cache = await redisClient.get(friendCacheKey);
+
+      if (cache) {
+        const friends = JSON.parse(cache);
+        const updatedFriends = friends.map((friend) =>
+          friend.friendId === userId ? updatedUser : friend
+        );
+
+        await redisClient.setEx(friendCacheKey, 300, JSON.stringify(updatedFriends));
+      }
+    }
 
     connection.release();
 
@@ -257,17 +328,59 @@ const uploadAvatar = async (req, res) => {
       avatarUrl: avatarPath,
     });
   } catch (error) {
+    console.error("Upload avatar error:", error);
     return res.status(500).json({ success: false, message: error.message });
   } finally {
     if (connection) connection.release();
   }
 };
 
+// const updateProfile = async (req, res) => {
+//   let connection;
+//   try {
+//     const userId = req.user.userId;
+//     const { firstName, lastName, email } = req.body.userDetails;
+//     if (!userId) {
+//       return res.status(400).json({ success: false, message: "UnAuthorized" });
+//     }
+
+//     if (!firstName || !lastName || !email) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "All Fields Are Required" });
+//     }
+
+//     connection = await db.getConnection();
+
+//     await connection.query(
+//       "UPDATE user SET firstName = ?, lastName = ? , email = ?WHERE id = ?",
+//       [firstName, lastName, email, userId]
+//     );
+
+//     const [updatedUser] = await connection.query(
+//       "SELECT * FROM user WHERE id=?",
+//       [userId]
+//     );
+
+//     const cacheKey = `user:friends:${userId}`
+
+    
+
+
+//     return res.status(200).json({ success: true, user: updatedUser[0], message: "Profile Updated Successfully" });
+//   } catch (error) {
+//     console.error("Error updating profile:", error);
+//     return res
+//       .status(500)
+//       .json({ success: false, message: error.message || error });
+//   }
+// };
 const updateProfile = async (req, res) => {
   let connection;
   try {
     const userId = req.user.userId;
     const { firstName, lastName, email } = req.body.userDetails;
+
     if (!userId) {
       return res.status(400).json({ success: false, message: "UnAuthorized" });
     }
@@ -280,27 +393,58 @@ const updateProfile = async (req, res) => {
 
     connection = await db.getConnection();
 
+    // Update user profile
     await connection.query(
-      "UPDATE user SET firstName = ?, lastName = ? , email = ?WHERE id = ?",
+      "UPDATE user SET firstName = ?, lastName = ?, email = ? WHERE id = ?",
       [firstName, lastName, email, userId]
     );
 
-    const [updatedUser] = await connection.query(
+    // Fetch updated info in same structure as Redis cache
+    const [updatedUserRows] = await connection.query(
+      "SELECT id AS friendId, CONCAT(firstName, ' ', lastName) AS userName, email, avatar FROM user WHERE id = ?",
+      [userId]
+    );
+
+        const [updatedUserDetails] = await connection.query(
       "SELECT * FROM user WHERE id=?",
       [userId]
     );
 
-    const cacheKey = `user:friends:${userId}`
+    const updatedUser = updatedUserRows[0];
 
-    
+    // Get list of friends who have this user in their friend list
+    const [friendIds] = await connection.query(
+      "SELECT user_id FROM user_friends WHERE friend_id = ?",
+      [userId]
+    );
 
+    // Update each friend's Redis cache
+    for (const { user_id: friendId } of friendIds) {
+      const cacheKey = `user:friends:${friendId}`;
+      const cache = await redisClient.get(cacheKey);
 
-    return res.status(200).json({ success: true, user: updatedUser[0], message: "Profile Updated Successfully" });
+      if (cache) {
+        const friends = JSON.parse(cache);
+        const updatedFriends = friends.map((friend) =>
+          friend.friendId === userId ? updatedUser : friend
+        );
+
+        await redisClient.setEx(cacheKey, 300, JSON.stringify(updatedFriends));
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      user: updatedUserDetails[0],
+      message: "Profile Updated Successfully",
+    });
   } catch (error) {
     console.error("Error updating profile:", error);
     return res
       .status(500)
-      .json({ success: false, message: error.message || error });
+      .json({ success: false, message: error.message || "Internal Server Error" });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -396,6 +540,7 @@ const fetchFriends = async (req, res) => {
     const existInCache = await redisClient.get(cacheKey);
     if (existInCache) {
       const parsedFriends = JSON.parse(existInCache);
+      console.log("Cache hit for friends:", parsedFriends);
       return res.status(200).json({
         success: true,
         friends: parsedFriends,

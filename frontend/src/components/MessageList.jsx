@@ -69,7 +69,6 @@ const MessageList = ({ messages, selectedUser, users }) => {
 
             {message.sender_id === myDetails.id && (
               <>
-                <p>{myDetails.userName}</p>
                 <img
                   src={myDetails.avatar}
                   alt="You"

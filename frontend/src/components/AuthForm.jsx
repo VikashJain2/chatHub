@@ -7,6 +7,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { setUser } from "../store/userSlice";
+import { encryptPrivateKey, generateECDHKeys } from "../utils/cryptoUtils";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -73,24 +74,42 @@ export default function AuthForm({ isLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (validateForm()) {
-      try {
-        const response = await axios.post(
-          `${BASE_URL}/user/${isLogin ? "login" : "create"}`,
-          formData,
-          {
-            withCredentials: true,
-          }
-        );
 
-        if (response.data.success) {
-          alert(response.data.message);
-          dispatch(setUser(response.data.data));
-          navigate(`/chat/${response.data.data?.id}`);
-        }
-      } catch (error) {
-        console.log(error);
+    if (!validateForm()) return;
+
+    let publicKey, encryptedPrivateKey, salt, iv;
+
+    try {
+      if (!isLogin) {
+        const { publicKey: pubKey, privateKey } = await generateECDHKeys();
+        const encrypted = await encryptPrivateKey(
+          privateKey,
+          formData.password
+        );
+        publicKey = pubKey;
+        encryptedPrivateKey = encrypted.encryptedPrivateKey;
+        salt = encrypted.salt;
+        iv = encrypted.iv;
       }
+
+      const response = await axios.post(
+        `${BASE_URL}/user/${isLogin ? "login" : "create"}`,
+        {
+          ...formData,
+          ...(isLogin ? {} : { publicKey, encryptedPrivateKey,encryption_salt: salt,encryption_iv: iv }),
+        },
+        {
+          withCredentials: true,
+        }
+      );
+
+      if (response.data.success) {
+        alert(response.data.message);
+        dispatch(setUser(response.data.data));
+        navigate(`/chat/${response.data.data?.id}`);
+      }
+    } catch (error) {
+      console.log(error);
     }
   };
 

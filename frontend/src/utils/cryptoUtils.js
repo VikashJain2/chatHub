@@ -84,6 +84,83 @@ export const decryptMessage = async (cipherText, iv, sharedKey) => {
 
   return new TextDecoder().decode(decryptMessage);
 };
+
+export const encryptPrivateKey = async (privateKey, password) => {
+  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+  const enc = new TextEncoder();
+  const passwordKey = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+  const aesKey = await window.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    passwordKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"]
+  );
+
+  const encrypted = await window.crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    aesKey,
+    base64ToArrayBuffer(privateKey)
+  );
+
+  return {
+    encryptedPrivateKey: arrayBufferToBase64(encrypted),
+    iv: arrayBufferToBase64(iv),
+    salt: arrayBufferToBase64(salt),
+  };
+};
+
+export const decryptPrivateKey = async (
+  encryptedPrivateKey,
+  ivBase64,
+  saltBase64,
+  password
+) => {
+  const salt = base64ToArrayBuffer(saltBase64);
+  const iv = base64ToArrayBuffer(ivBase64);
+
+  const enc = new TextEncoder();
+  const passwordKey = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+
+  const aesKey = await window.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    passwordKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+
+  const decrypted = await window.crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    aesKey,
+    base64ToArrayBuffer(encryptedPrivateKey)
+  );
+  return arrayBufferToBase64(decrypted)
+};
 const arrayBufferToBase64 = (buffer) => {
   const bytes = new Uint8Array(buffer);
   return btoa(String.fromCharCode(...bytes));

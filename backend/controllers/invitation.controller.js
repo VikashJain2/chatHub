@@ -17,7 +17,6 @@ const createInvitation = async (req, res) => {
         .json({ success: false, message: "Invitee Or Inviter Id is required" });
     }
 
-    console.log(inviteeId);
     const [existingUser] = await connection.query(
       "SELECT id FROM user WHERE id = ? ",
       [inviteeId]
@@ -55,7 +54,9 @@ const createInvitation = async (req, res) => {
     );
 
     const timestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const notificationId = uuidv4();
     const notificationResult = await createNotification(
+      notificationId,
       connection,
       "invitation_sent",
       inviterId,
@@ -65,7 +66,7 @@ const createInvitation = async (req, res) => {
     );
 
     const notification = {
-      id: notificationResult.insertId,
+      id: notificationId,
       type: "invitation_sent",
       user_id: inviterId,
       related_user_id: inviteeId,
@@ -192,7 +193,7 @@ const acceptInvitation = async (req, res) => {
       const inviterCacheKey = `user:friends:${inviterId}`
       const updateCache = await redisClient.get(inviterCacheKey)
 
-      const parsedFriends = JSON.parse(updateCache)
+     const parsedFriends = updateCache ? JSON.parse(updateCache) : [];
 
       const [newFriendRow] = await connection.query("SELECT id AS friendId, CONCAT(firstName,' ',lastName) AS userName,email, avatar FROM user WHERE id = ?", [userId])
 
@@ -206,7 +207,8 @@ const acceptInvitation = async (req, res) => {
       const inviteeCacheKey = `user:friends:${userId}`
       const updateInviteeCache = await redisClient.get(inviteeCacheKey);
 
-      const parsedInviteeFriends = JSON.parse(updateInviteeCache)
+     const parsedInviteeFriends = updateInviteeCache ? JSON.parse(updateInviteeCache) : [];
+
       const [inviter] = await connection.query("SELECT id AS friendId, CONCAT(firstName,' ',lastName) AS userName,email, avatar FROM user WHERE id = ?", [inviterId])
 
        if(inviter.length > 0){
