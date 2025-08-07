@@ -1,5 +1,5 @@
 import express from 'express'
-import { createUser, fetchFriends, fetchUserDetails, getAllUsersList, loginUser, logoutUser, updateProfile, uploadAvatar } from '../controllers/user.controller.js'
+import { createUser, fetchFriends, fetchUserDetails, getAllUsersList, getUsersPublicKeyAndPrivateKey, loginUser, logoutUser, updateProfile, uploadAvatar } from '../controllers/user.controller.js'
 import verifyToken from '../middleware/auth.middleware.js'
 import { upload } from '../middleware/upload.js'
 
@@ -13,4 +13,5 @@ userRouter.get("/get-all",verifyToken, getAllUsersList)
 userRouter.put("/update-profile", verifyToken, updateProfile)
 userRouter.get("/get-details", verifyToken, fetchUserDetails)
 userRouter.get("/friends", verifyToken, fetchFriends)
+userRouter.get("/get-public-private-keys", verifyToken, getUsersPublicKeyAndPrivateKey)
 export default userRouter

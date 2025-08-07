@@ -154,7 +154,6 @@ const ChatApp = () => {
   }, []);
 
   const deleteNotification = useCallback(async (notificationId) => {
-    console.log("Notification Id", notificationId)
     try {
       const response = await axios.delete(
         `${BASE_URL}/notifications/delete/${notificationId}`,{withCredentials: true}
@@ -404,7 +403,6 @@ const ChatApp = () => {
   }, []);
 
   const handleLogout = useCallback(() => {
-    console.log("User logged out");
     setShowLogoutModal(false);
     setSelectedUser(null);
     setIsSidebarOpen(false);

@@ -6,9 +6,10 @@ import cloudinary from "../config/cloudinary.js";
 import fs from "fs";
 import path from "path";
 import { v4 as uuidv4, v4 } from "uuid";
-const generateToken = (userId) => {
+const generateToken = (userId, email) => {
   let payload = {
     userId: userId,
+    email: email,
   };
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
 
@@ -28,9 +29,26 @@ const cacheUser = async (email, userId, password) => {
 const createUser = async (req, res) => {
   let connection;
   try {
-    const { firstName, password, lastName, email, publicKey, encryptedPrivateKey, encryption_iv, encryption_salt  } = req.body;
-    console.log("Received data:", req.body);
-    if (!firstName || !password || !lastName || !email || !publicKey || !encryptedPrivateKey || !encryption_iv || !encryption_salt) {
+    const {
+      firstName,
+      password,
+      lastName,
+      email,
+      publicKey,
+      encryptedPrivateKey,
+      encryption_iv,
+      encryption_salt,
+    } = req.body;
+    if (
+      !firstName ||
+      !password ||
+      !lastName ||
+      !email ||
+      !publicKey ||
+      !encryptedPrivateKey ||
+      !encryption_iv ||
+      !encryption_salt
+    ) {
       return res
         .status(400)
         .json({ success: false, message: "All fields are required" });
@@ -53,12 +71,22 @@ const createUser = async (req, res) => {
     let id = uuidv4();
     const [insertedUser] = await connection.query(
       "insert into user (id,firstName, lastName, email, password,public_key,encrypted_private_key, encryption_iv,encryption_salt) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, lastName, email, hashPassword, publicKey, encryptedPrivateKey, encryption_iv, encryption_salt]
+      [
+        id,
+        firstName,
+        lastName,
+        email,
+        hashPassword,
+        publicKey,
+        encryptedPrivateKey,
+        encryption_iv,
+        encryption_salt,
+      ]
     );
 
     await cacheUser(email, id, hashPassword);
 
-    const token = generateToken(id);
+    const token = generateToken(id, email);
 
     const [fullUserData] = await connection.query(
       "SELECT id, firstName, lastName, email, public_key,encrypted_private_key,encryption_iv,encryption_salt FROM user WHERE id = ?",
@@ -79,7 +107,7 @@ const createUser = async (req, res) => {
       });
   } catch (error) {
     if (connection) connection.release();
-    console.log(error)
+    console.log(error);
     return res
       .status(500)
       .json({ success: false, error: error.message || error });
@@ -125,7 +153,7 @@ const loginUser = async (req, res) => {
         [parsedUser.id]
       );
 
-      const token = generateToken(parsedUser.id);
+      const token = generateToken(parsedUser.id, email);
       return res
         .cookie("token", token, {
           httpOnly: true,
@@ -247,8 +275,6 @@ const logoutUser = async (req, res) => {
 
 //    const cacheKey = `user:friends:${userId}`
 
-   
-
 //     connection.release();
 
 //     return res.status(200).json({
@@ -316,7 +342,11 @@ const uploadAvatar = async (req, res) => {
           friend.friendId === userId ? updatedUser : friend
         );
 
-        await redisClient.setEx(friendCacheKey, 300, JSON.stringify(updatedFriends));
+        await redisClient.setEx(
+          friendCacheKey,
+          300,
+          JSON.stringify(updatedFriends)
+        );
       }
     }
 
@@ -364,9 +394,6 @@ const uploadAvatar = async (req, res) => {
 
 //     const cacheKey = `user:friends:${userId}`
 
-    
-
-
 //     return res.status(200).json({ success: true, user: updatedUser[0], message: "Profile Updated Successfully" });
 //   } catch (error) {
 //     console.error("Error updating profile:", error);
@@ -405,7 +432,7 @@ const updateProfile = async (req, res) => {
       [userId]
     );
 
-        const [updatedUserDetails] = await connection.query(
+    const [updatedUserDetails] = await connection.query(
       "SELECT * FROM user WHERE id=?",
       [userId]
     );
@@ -442,7 +469,10 @@ const updateProfile = async (req, res) => {
     console.error("Error updating profile:", error);
     return res
       .status(500)
-      .json({ success: false, message: error.message || "Internal Server Error" });
+      .json({
+        success: false,
+        message: error.message || "Internal Server Error",
+      });
   } finally {
     if (connection) connection.release();
   }
@@ -588,6 +618,37 @@ const fetchFriends = async (req, res) => {
   }
 };
 
+const getUsersPublicKeyAndPrivateKey = async (req, res) => {
+  let connection;
+  try {
+    const userId = req.user.userId;
+    if (!userId) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not Authenticated" });
+    }
+    await connection.getConnection();
+
+    const [user] = await connection.query(
+      "SELECT public_key, encrypted_private_key, encryption_iv, encryption_salt FROM user WHERE id = ?",
+      [userId]
+    );
+
+    if (user.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    return res.status(200).json({ success: true, data: user[0] });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Internal Server Error",
+      });
+  }
+};
 export {
   createUser,
   loginUser,
@@ -597,4 +658,5 @@ export {
   updateProfile,
   fetchUserDetails,
   fetchFriends,
+  getUsersPublicKeyAndPrivateKey,
 };
