@@ -129,6 +129,9 @@ const ChatApp = () => {
     };
   }, []);
 
+  useEffect(()=>{
+    
+  })
   const fetchUserFriends = async () => {
     try {
       const response = await axios.get(`${BASE_URL}/user/friends`, {
@@ -222,16 +225,8 @@ const ChatApp = () => {
 
   const handleSendMessage = useCallback(async() => {
     if (newMessage.trim()) {
-      // const message = {
-      //   id: messages.length + 1,
-      //   text: newMessage,
-      //   sender: "user",
-      //   timestamp: new Date().toLocaleTimeString([], {
-      //     hour: "2-digit",
-      //     minute: "2-digit",
-      //   }),
-      // };
-
+      // if(!user)
+      console.log("Selected User:", selectedUser);
       let message = {
         sender_id: user.id,
         receiver_id: selectedUser.friendId,

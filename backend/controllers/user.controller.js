@@ -467,12 +467,10 @@ const updateProfile = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating profile:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Internal Server Error",
-      });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -595,10 +593,9 @@ const fetchFriends = async (req, res) => {
       [userId]
     );
 
-    // Store result in Redis cache for 5 minutes
     await redisClient.setEx(
       cacheKey,
-      300, // expires in 300 seconds (5 minutes)
+      300, 
       JSON.stringify(userFriends)
     );
 
@@ -627,7 +624,7 @@ const getUsersPublicKeyAndPrivateKey = async (req, res) => {
         .status(403)
         .json({ success: false, message: "Not Authenticated" });
     }
-    await connection.getConnection();
+    connection = await db.getConnection();
 
     const [user] = await connection.query(
       "SELECT public_key, encrypted_private_key, encryption_iv, encryption_salt FROM user WHERE id = ?",
@@ -635,18 +632,53 @@ const getUsersPublicKeyAndPrivateKey = async (req, res) => {
     );
 
     if (user.length === 0) {
+      connection.release();
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
     }
     return res.status(200).json({ success: true, data: user[0] });
   } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+const getFriendsPublicKey = async (req, res) => {
+  let connection;
+  try {
+    const { friendId } = req.params;
+    if (!friendId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Friend ID is required" });
+    }
+    connection = await db.getConnection();
+
+    const [friendPublicKey] = await connection.query(
+      "SELECT public_key FROM user WHERE id = ?",
+      [friendId]
+    );
+
+    if (friendPublicKey.length === 0) {
+      connection.release();
+      return res
+        .status(404)
+        .json({ success: false, message: "Friend not found" });
+    }
+
     return res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Internal Server Error",
-      });
+      .status(200)
+      .json({ success: true, publicKey: friendPublicKey[0].public_key });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
   }
 };
 export {
@@ -659,4 +691,5 @@ export {
   fetchUserDetails,
   fetchFriends,
   getUsersPublicKeyAndPrivateKey,
+  getFriendsPublicKey,
 };
