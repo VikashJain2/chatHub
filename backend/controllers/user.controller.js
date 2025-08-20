@@ -5,25 +5,49 @@ import { redisClient } from "../config/redis.js";
 import cloudinary from "../config/cloudinary.js";
 import fs from "fs";
 import path from "path";
-import { v4 as uuidv4, v4 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
+import util from "util";
+
+// Promisify file system operations for better async handling
+const unlinkAsync = util.promisify(fs.unlink);
+const rmdirAsync = util.promisify(fs.rm);
+
 const generateToken = (userId, email) => {
-  let payload = {
+  const payload = {
     userId: userId,
     email: email,
   };
-  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
-
-  return token;
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
 };
 
 const cacheUser = async (email, userId, password) => {
   const key = `user:email:${email}`;
   const value = JSON.stringify({ id: userId, password, email });
+  
+  try {
+    await redisClient.setEx(key, 86400, value);
+    console.log(`✅ Cached Redis data [${key}]`);
+  } catch (error) {
+    console.error(`❌ Failed to cache user: ${error.message}`);
+    // Don't throw as caching failures shouldn't break the main flow
+  }
+};
 
-  await redisClient.setEx(key, 86400, value);
+// Helper function to safely release database connections
+const releaseConnection = (connection) => {
+  if (connection && typeof connection.release === "function") {
+    connection.release();
+  }
+};
 
-  const stored = await redisClient.get(key);
-  console.log(`✅ Cached Redis data [${key}]:`, stored);
+// Helper function to get database connection with error handling
+const getDBConnection = async () => {
+  try {
+    return await db.getConnection();
+  } catch (error) {
+    console.error("Failed to get database connection:", error);
+    throw new Error("Database connection failed");
+  }
 };
 
 const createUser = async (req, res) => {
@@ -39,169 +63,181 @@ const createUser = async (req, res) => {
       encryption_iv,
       encryption_salt,
     } = req.body;
-    if (
-      !firstName ||
-      !password ||
-      !lastName ||
-      !email ||
-      !publicKey ||
-      !encryptedPrivateKey ||
-      !encryption_iv ||
-      !encryption_salt
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "All fields are required" });
+
+    // Validate required fields
+    const requiredFields = [
+      "firstName", "password", "lastName", "email", 
+      "publicKey", "encryptedPrivateKey", "encryption_iv", "encryption_salt"
+    ];
+    
+    const missingFields = requiredFields.filter(field => !req.body[field]);
+    if (missingFields.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "All fields are required",
+        missingFields 
+      });
     }
 
-    connection = await db.getConnection();
+    connection = await getDBConnection();
 
+    // Check if user already exists
     const [existingUser] = await connection.query(
-      "select id from user where email = ? LIMIT 1",
+      "SELECT id FROM user WHERE email = ? LIMIT 1",
       [email]
     );
 
     if (existingUser.length > 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Email Already Exists" });
+      return res.status(409).json({ 
+        success: false, 
+        message: "Email Already Exists" 
+      });
     }
 
+    // Hash password and create user
     const hashPassword = await bcrypt.hash(password, 10);
-    let id = uuidv4();
-    const [insertedUser] = await connection.query(
-      "insert into user (id,firstName, lastName, email, password,public_key,encrypted_private_key, encryption_iv,encryption_salt) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        id,
-        firstName,
-        lastName,
-        email,
-        hashPassword,
-        publicKey,
-        encryptedPrivateKey,
-        encryption_iv,
-        encryption_salt,
-      ]
+    const id = uuidv4();
+    
+    await connection.query(
+      "INSERT INTO user (id, firstName, lastName, email, password, public_key, encrypted_private_key, encryption_iv, encryption_salt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, lastName, email, hashPassword, publicKey, encryptedPrivateKey, encryption_iv, encryption_salt]
     );
 
+    // Cache user and generate token
     await cacheUser(email, id, hashPassword);
-
     const token = generateToken(id, email);
 
+    // Get complete user data (excluding password)
     const [fullUserData] = await connection.query(
-      "SELECT id, firstName, lastName, email, public_key,encrypted_private_key,encryption_iv,encryption_salt FROM user WHERE id = ?",
+      "SELECT id, firstName, lastName, email, public_key, encrypted_private_key, encryption_iv, encryption_salt FROM user WHERE id = ?",
       [id]
     );
-    connection.release();
+
     return res
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        maxAge: 24 * 60 * 60 * 1000, // 1 day
       })
-      .status(200)
+      .status(201)
       .json({
         success: true,
         message: "User created successfully",
         data: fullUserData[0],
       });
   } catch (error) {
-    if (connection) connection.release();
-    console.log(error);
-    return res
-      .status(500)
-      .json({ success: false, error: error.message || error });
+    console.error("Create user error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error" 
+    });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
 const loginUser = async (req, res) => {
   let connection;
   try {
-    // const io = req.app.get("io")
-
     const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Both Fields Are Required",
+        message: "Both email and password are required",
       });
     }
 
-    connection = await db.getConnection();
+    connection = await getDBConnection();
 
+    // Try to get user from cache first
     const cachedUser = await redisClient.get(`user:email:${email}`);
+    
     if (cachedUser) {
-      const parsedUser = JSON.parse(cachedUser);
+      try {
+        const parsedUser = JSON.parse(cachedUser);
+        const isValidPassword = await bcrypt.compare(password, parsedUser.password);
+        
+        if (!isValidPassword) {
+          return res.status(401).json({
+            success: false,
+            message: "Invalid credentials",
+          });
+        }
 
-      const isValidPassword = await bcrypt.compare(
-        password,
-        parsedUser.password
-      );
-      if (!isValidPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid Credentials",
-        });
+        // Get full user data from DB
+        const [fullUserData] = await connection.query(
+          "SELECT id, firstName, lastName, email, avatar, public_key, encrypted_private_key, encryption_iv, encryption_salt FROM user WHERE id = ?",
+          [parsedUser.id]
+        );
+
+        if (fullUserData.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "User not found",
+          });
+        }
+
+        const token = generateToken(parsedUser.id, email);
+        
+        return res
+          .cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 24 * 60 * 60 * 1000, // 1 day
+          })
+          .status(200)
+          .json({
+            success: true,
+            message: "Login successful",
+            data: fullUserData[0],
+          });
+      } catch (parseError) {
+        console.error("Error parsing cached user:", parseError);
+        // Continue to database lookup if cache parsing fails
       }
-
-      // Return full user (excluding password)
-      const [fullUserData] = await connection.query(
-        "SELECT id, firstName, lastName, email, avatar,public_key,encrypted_private_key,encryption_iv,encryption_salt FROM user WHERE id = ?",
-        [parsedUser.id]
-      );
-
-      const token = generateToken(parsedUser.id, email);
-      return res
-        .cookie("token", token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
-        })
-        .status(200)
-        .json({
-          success: true,
-          message: "Login successful",
-          data: fullUserData[0],
-        });
     }
 
+    // If not in cache or cache parsing failed, check database
     const [user] = await connection.query(
       "SELECT id, password FROM user WHERE email = ? LIMIT 1",
       [email]
     );
 
-    if (!user.length) {
-      return res.status(400).json({
+    if (user.length === 0) {
+      return res.status(401).json({
         success: false,
-        message: "Invalid Credentials",
+        message: "Invalid credentials",
       });
     }
 
-    const checkPassword = await bcrypt.compare(password, user[0].password);
-    if (!checkPassword) {
-      return res.status(400).json({
+    const isValidPassword = await bcrypt.compare(password, user[0].password);
+    if (!isValidPassword) {
+      return res.status(401).json({
         success: false,
-        message: "Invalid Credentials",
+        message: "Invalid credentials",
       });
     }
 
+    // Cache user for future logins
     await cacheUser(email, user[0].id, user[0].password);
 
+    // Get full user data
     const [fullUserData] = await connection.query(
-      "SELECT id, firstName, lastName, email,avatar FROM user WHERE id = ?",
+      "SELECT id, firstName, lastName, email, avatar, public_key, encrypted_private_key, encryption_iv, encryption_salt FROM user WHERE id = ?",
       [user[0].id]
     );
 
-    console.log("userId in Login-->", user[0].id);
-    const token = generateToken(user[0].id);
+    const token = generateToken(user[0].id, email);
+    
     return res
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        maxAge: 24 * 60 * 60 * 1000, // 1 day
       })
       .status(200)
       .json({
@@ -210,198 +246,144 @@ const loginUser = async (req, res) => {
         data: fullUserData[0],
       });
   } catch (error) {
-    console.error(`⛔ [Login Error] ${error.message}`, error.stack);
+    console.error("Login error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
     });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
 const logoutUser = async (req, res) => {
   try {
-    const redisKey = `user:email:${req.user.email}`;
-    await redisClient.del(redisKey);
-    await res.clearCookie("token", {
+    if (req.user && req.user.email) {
+      const redisKey = `user:email:${req.user.email}`;
+      await redisClient.del(redisKey).catch(err => 
+        console.error("Failed to delete Redis key:", err)
+      );
+    }
+    
+    res.clearCookie("token", {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
     });
-    return res
-      .status(200)
-      .json({ success: true, message: "User loggedout successfully" });
+    
+    return res.status(200).json({ 
+      success: true, 
+      message: "User logged out successfully" 
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: error.message || error });
+    console.error("Logout error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error" 
+    });
   }
 };
 
-// const uploadAvatar = async (req, res) => {
-//   let connection;
-//   try {
-//     const userId = req?.user?.userId;
-
-//     if (!userId) {
-//       return res.status(401).json({ success: false, message: "Unauthorized" });
-//     }
-
-//     if (!req.file) {
-//       return res
-//         .status(400)
-//         .json({ success: false, message: "No file uploaded" });
-//     }
-
-//     const avatarPath = await cloudinary.uploader.upload(req.file.path, {
-//       folder: "chatHub",
-//     });
-
-//     fs.unlinkSync(req.file.path);
-
-//     const uploadDir = path.dirname(req.file.path);
-//     try {
-//       fs.rmdirSync(uploadDir, { recursive: true });
-//     } catch (folderErr) {
-//       console.warn("Failed to remove upload folder:", folderErr.message);
-//     }
-//     connection = await db.getConnection();
-
-//     await connection.query("UPDATE user SET avatar = ? WHERE id = ?", [
-//       avatarPath.secure_url,
-//       userId,
-//     ]);
-
-//    const cacheKey = `user:friends:${userId}`
-
-//     connection.release();
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "Avatar uploaded successfully",
-//       avatarUrl: avatarPath,
-//     });
-//   } catch (error) {
-//     return res.status(500).json({ success: false, message: error.message });
-//   } finally {
-//     if (connection) connection.release();
-//   }
-// };
 const uploadAvatar = async (req, res) => {
   let connection;
   try {
-    const userId = req?.user?.userId;
-
+    const userId = req.user?.userId;
     if (!userId) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+      return res.status(401).json({ 
+        success: false, 
+        message: "Unauthorized" 
+      });
     }
 
     if (!req.file) {
-      return res
-        .status(400)
-        .json({ success: false, message: "No file uploaded" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "No file uploaded" 
+      });
     }
 
-    const avatarPath = await cloudinary.uploader.upload(req.file.path, {
+    // Upload to Cloudinary
+    const avatarResult = await cloudinary.uploader.upload(req.file.path, {
       folder: "chatHub",
     });
 
-    fs.unlinkSync(req.file.path);
-    const uploadDir = path.dirname(req.file.path);
+    // Clean up uploaded file
     try {
-      fs.rmdirSync(uploadDir, { recursive: true });
-    } catch (folderErr) {
-      console.warn("Failed to remove upload folder:", folderErr.message);
+      await unlinkAsync(req.file.path);
+      const uploadDir = path.dirname(req.file.path);
+      await rmdirAsync(uploadDir, { recursive: true });
+    } catch (cleanupError) {
+      console.warn("File cleanup warning:", cleanupError.message);
     }
 
-    connection = await db.getConnection();
+    connection = await getDBConnection();
 
-    await connection.query("UPDATE user SET avatar = ? WHERE id = ?", [
-      avatarPath.secure_url,
-      userId,
-    ]);
+    // Update user avatar in database
+    await connection.query(
+      "UPDATE user SET avatar = ? WHERE id = ?",
+      [avatarResult.secure_url, userId]
+    );
+
+    // Get updated user info
     const [updatedUserRows] = await connection.query(
       "SELECT id AS friendId, CONCAT(firstName, ' ', lastName) AS userName, email, avatar FROM user WHERE id = ?",
       [userId]
     );
+    
+    if (updatedUserRows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "User not found" 
+      });
+    }
+
     const updatedUser = updatedUserRows[0];
 
+    // Update all friends' caches
     const [friendIds] = await connection.query(
       "SELECT user_id FROM user_friends WHERE friend_id = ?",
       [userId]
     );
 
-    for (const { user_id: friendId } of friendIds) {
+    // Process cache updates in parallel
+    const cacheUpdatePromises = friendIds.map(async ({ user_id: friendId }) => {
       const friendCacheKey = `user:friends:${friendId}`;
-      const cache = await redisClient.get(friendCacheKey);
-
-      if (cache) {
-        const friends = JSON.parse(cache);
-        const updatedFriends = friends.map((friend) =>
-          friend.friendId === userId ? updatedUser : friend
-        );
-
-        await redisClient.setEx(
-          friendCacheKey,
-          300,
-          JSON.stringify(updatedFriends)
-        );
+      try {
+        const cache = await redisClient.get(friendCacheKey);
+        if (cache) {
+          const friends = JSON.parse(cache);
+          const updatedFriends = friends.map(friend => 
+            friend.friendId === userId ? updatedUser : friend
+          );
+          await redisClient.setEx(
+            friendCacheKey,
+            300,
+            JSON.stringify(updatedFriends)
+          );
+        }
+      } catch (cacheError) {
+        console.error(`Cache update failed for ${friendCacheKey}:`, cacheError);
       }
-    }
+    });
 
-    connection.release();
+    await Promise.allSettled(cacheUpdatePromises);
 
     return res.status(200).json({
       success: true,
       message: "Avatar uploaded successfully",
-      avatarUrl: avatarPath,
+      avatarUrl: avatarResult.secure_url,
     });
   } catch (error) {
     console.error("Upload avatar error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error" 
+    });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
-// const updateProfile = async (req, res) => {
-//   let connection;
-//   try {
-//     const userId = req.user.userId;
-//     const { firstName, lastName, email } = req.body.userDetails;
-//     if (!userId) {
-//       return res.status(400).json({ success: false, message: "UnAuthorized" });
-//     }
-
-//     if (!firstName || !lastName || !email) {
-//       return res
-//         .status(400)
-//         .json({ success: false, message: "All Fields Are Required" });
-//     }
-
-//     connection = await db.getConnection();
-
-//     await connection.query(
-//       "UPDATE user SET firstName = ?, lastName = ? , email = ?WHERE id = ?",
-//       [firstName, lastName, email, userId]
-//     );
-
-//     const [updatedUser] = await connection.query(
-//       "SELECT * FROM user WHERE id=?",
-//       [userId]
-//     );
-
-//     const cacheKey = `user:friends:${userId}`
-
-//     return res.status(200).json({ success: true, user: updatedUser[0], message: "Profile Updated Successfully" });
-//   } catch (error) {
-//     console.error("Error updating profile:", error);
-//     return res
-//       .status(500)
-//       .json({ success: false, message: error.message || error });
-//   }
-// };
 const updateProfile = async (req, res) => {
   let connection;
   try {
@@ -409,16 +391,20 @@ const updateProfile = async (req, res) => {
     const { firstName, lastName, email } = req.body.userDetails;
 
     if (!userId) {
-      return res.status(400).json({ success: false, message: "UnAuthorized" });
+      return res.status(401).json({ 
+        success: false, 
+        message: "Unauthorized" 
+      });
     }
 
     if (!firstName || !lastName || !email) {
-      return res
-        .status(400)
-        .json({ success: false, message: "All Fields Are Required" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "All fields are required" 
+      });
     }
 
-    connection = await db.getConnection();
+    connection = await getDBConnection();
 
     // Update user profile
     await connection.query(
@@ -426,85 +412,111 @@ const updateProfile = async (req, res) => {
       [firstName, lastName, email, userId]
     );
 
-    // Fetch updated info in same structure as Redis cache
+    // Get updated user info
     const [updatedUserRows] = await connection.query(
       "SELECT id AS friendId, CONCAT(firstName, ' ', lastName) AS userName, email, avatar FROM user WHERE id = ?",
       [userId]
     );
-
-    const [updatedUserDetails] = await connection.query(
-      "SELECT * FROM user WHERE id=?",
-      [userId]
-    );
+    
+    if (updatedUserRows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "User not found" 
+      });
+    }
 
     const updatedUser = updatedUserRows[0];
 
-    // Get list of friends who have this user in their friend list
+    // Get complete user details for response
+    const [updatedUserDetails] = await connection.query(
+      "SELECT * FROM user WHERE id = ?",
+      [userId]
+    );
+
+    // Update all friends' caches
     const [friendIds] = await connection.query(
       "SELECT user_id FROM user_friends WHERE friend_id = ?",
       [userId]
     );
 
-    // Update each friend's Redis cache
-    for (const { user_id: friendId } of friendIds) {
+    // Process cache updates in parallel
+    const cacheUpdatePromises = friendIds.map(async ({ user_id: friendId }) => {
       const cacheKey = `user:friends:${friendId}`;
-      const cache = await redisClient.get(cacheKey);
-
-      if (cache) {
-        const friends = JSON.parse(cache);
-        const updatedFriends = friends.map((friend) =>
-          friend.friendId === userId ? updatedUser : friend
-        );
-
-        await redisClient.setEx(cacheKey, 300, JSON.stringify(updatedFriends));
+      try {
+        const cache = await redisClient.get(cacheKey);
+        if (cache) {
+          const friends = JSON.parse(cache);
+          const updatedFriends = friends.map(friend => 
+            friend.friendId === userId ? updatedUser : friend
+          );
+          await redisClient.setEx(
+            cacheKey,
+            300,
+            JSON.stringify(updatedFriends)
+          );
+        }
+      } catch (cacheError) {
+        console.error(`Cache update failed for ${cacheKey}:`, cacheError);
       }
-    }
+    });
+
+    await Promise.allSettled(cacheUpdatePromises);
 
     return res.status(200).json({
       success: true,
       user: updatedUserDetails[0],
-      message: "Profile Updated Successfully",
+      message: "Profile updated successfully",
     });
   } catch (error) {
-    console.error("Error updating profile:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Internal Server Error",
+    console.error("Update profile error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error" 
     });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
 const getAllUsersList = async (req, res) => {
   let connection;
   try {
-    connection = await db.getConnection();
-
     const user = req.user;
-
-    let searchQuery = req.query.search;
-    let searchPattern = `%${searchQuery}%`;
-
+    const searchQuery = req.query.search || "";
+    const searchPattern = `%${searchQuery}%`;
     const cacheKey = `usersList:${searchQuery}`;
 
+    // Try to get from cache first
     const cacheData = await redisClient.get(cacheKey);
-
     if (cacheData) {
-      return res.status(200).json({ success: true, data: cacheData });
+      return res.status(200).json({ 
+        success: true, 
+        data: JSON.parse(cacheData) 
+      });
     }
-    const result = await connection.query(
-      "SELECT * FROM user WHERE (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?) AND id NOT LIKE ?",
+
+    connection = await getDBConnection();
+
+    const [result] = await connection.query(
+      "SELECT id, firstName, lastName, email, avatar FROM user WHERE (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?) AND id != ?",
       [searchPattern, searchPattern, searchPattern, user.userId]
     );
 
-    return res.status(200).json({ success: true, data: result[0] });
+    // Cache the result for 5 minutes
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(result));
+
+    return res.status(200).json({ 
+      success: true, 
+      data: result 
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: error.message || error });
+    console.error("Get all users error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error" 
+    });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
@@ -512,41 +524,53 @@ const fetchUserDetails = async (req, res) => {
   let connection;
   try {
     const userId = req.user.userId;
-    let cacheKey = `user:${userId}`;
     if (!userId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Not Authenticated" });
+      return res.status(401).json({ 
+        success: false, 
+        message: "Not authenticated" 
+      });
     }
 
+    const cacheKey = `user:${userId}`;
+    
+    // Try to get from cache first
     const cacheUser = await redisClient.get(cacheKey);
     if (cacheUser) {
-      const parseUser = JSON.parse(cacheUser);
-      return res.status(200).json({ success: true, user: parseUser });
+      return res.status(200).json({ 
+        success: true, 
+        user: JSON.parse(cacheUser) 
+      });
     }
 
-    connection = await db.getConnection();
+    connection = await getDBConnection();
 
     const [user] = await connection.query(
-      "SELECT firstName, lastName, email, avatar FROM user WHERE id = ?",
+      "SELECT id, firstName, lastName, email, avatar FROM user WHERE id = ?",
       [userId]
     );
 
-    if (user.length > 0) {
-      await redisClient.setEx(cacheKey, 60, JSON.stringify(user[0]));
-
-      connection.release();
-      return res.status(200).json({ success: true, user: user[0] });
+    if (user.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "User does not exist" 
+      });
     }
-    return res
-      .status(400)
-      .json({ success: false, message: "User does not exist" });
+
+    // Cache user details for 1 minute
+    await redisClient.setEx(cacheKey, 60, JSON.stringify(user[0]));
+
+    return res.status(200).json({ 
+      success: true, 
+      user: user[0] 
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: error.message || error });
+    console.error("Fetch user details error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error" 
+    });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
@@ -554,50 +578,41 @@ const fetchFriends = async (req, res) => {
   let connection;
   try {
     const { userId } = req.user;
-
     if (!userId) {
-      return res.status(403).json({
-        success: false,
-        message: "Unauthorized",
+      return res.status(401).json({ 
+        success: false, 
+        message: "Unauthorized" 
       });
     }
 
     const cacheKey = `user:friends:${userId}`;
 
-    // Check Redis cache
-    const existInCache = await redisClient.get(cacheKey);
-    if (existInCache) {
-      const parsedFriends = JSON.parse(existInCache);
-      console.log("Cache hit for friends:", parsedFriends);
+    // Try to get from cache first
+    const cachedFriends = await redisClient.get(cacheKey);
+    if (cachedFriends) {
       return res.status(200).json({
         success: true,
-        friends: parsedFriends,
+        friends: JSON.parse(cachedFriends),
         cached: true,
       });
     }
 
-    // If not cached, fetch from DB
-    connection = await db.getConnection();
+    connection = await getDBConnection();
 
     const [userFriends] = await connection.query(
-      `
-  SELECT 
-    u.id AS friendId,
-    CONCAT(u.firstName, ' ', u.lastName) AS userName,
-    u.email,
-    u.avatar
-  FROM user_friends f
-  JOIN user u ON u.id = f.friend_id
-  WHERE f.user_id = ?
-  `,
+      `SELECT 
+        u.id AS friendId,
+        CONCAT(u.firstName, ' ', u.lastName) AS userName,
+        u.email,
+        u.avatar
+      FROM user_friends f
+      JOIN user u ON u.id = f.friend_id
+      WHERE f.user_id = ?`,
       [userId]
     );
 
-    await redisClient.setEx(
-      cacheKey,
-      300, 
-      JSON.stringify(userFriends)
-    );
+    // Cache friends list for 5 minutes
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(userFriends));
 
     return res.status(200).json({
       success: true,
@@ -605,13 +620,13 @@ const fetchFriends = async (req, res) => {
       cached: false,
     });
   } catch (error) {
-    console.error("Error fetching friends:", error);
+    console.error("Fetch friends error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error",
+      message: "Internal server error",
     });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
@@ -620,11 +635,13 @@ const getUsersPublicKeyAndPrivateKey = async (req, res) => {
   try {
     const userId = req.user.userId;
     if (!userId) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Not Authenticated" });
+      return res.status(401).json({ 
+        success: false, 
+        message: "Not authenticated" 
+      });
     }
-    connection = await db.getConnection();
+
+    connection = await getDBConnection();
 
     const [user] = await connection.query(
       "SELECT public_key, encrypted_private_key, encryption_iv, encryption_salt FROM user WHERE id = ?",
@@ -632,19 +649,24 @@ const getUsersPublicKeyAndPrivateKey = async (req, res) => {
     );
 
     if (user.length === 0) {
-      connection.release();
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
+      return res.status(404).json({ 
+        success: false, 
+        message: "User not found" 
+      });
     }
-    return res.status(200).json({ success: true, data: user[0] });
+
+    return res.status(200).json({ 
+      success: true, 
+      data: user[0] 
+    });
   } catch (error) {
+    console.error("Get user keys error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error",
+      message: "Internal server error",
     });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection);
   }
 };
 
@@ -653,11 +675,13 @@ const getFriendsPublicKey = async (req, res) => {
   try {
     const { friendId } = req.params;
     if (!friendId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Friend ID is required" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Friend ID is required" 
+      });
     }
-    connection = await db.getConnection();
+
+    connection = await getDBConnection();
 
     const [friendPublicKey] = await connection.query(
       "SELECT public_key FROM user WHERE id = ?",
@@ -665,22 +689,27 @@ const getFriendsPublicKey = async (req, res) => {
     );
 
     if (friendPublicKey.length === 0) {
-      connection.release();
-      return res
-        .status(404)
-        .json({ success: false, message: "Friend not found" });
+      return res.status(404).json({ 
+        success: false, 
+        message: "Friend not found" 
+      });
     }
 
-    return res
-      .status(200)
-      .json({ success: true, publicKey: friendPublicKey[0].public_key });
+    return res.status(200).json({ 
+      success: true, 
+      publicKey: friendPublicKey[0].public_key 
+    });
   } catch (error) {
+    console.error("Get friend public key error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error",
+      message: "Internal server error",
     });
+  } finally {
+    releaseConnection(connection);
   }
 };
+
 export {
   createUser,
   loginUser,
