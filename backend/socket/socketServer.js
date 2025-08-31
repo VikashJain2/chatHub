@@ -1,6 +1,8 @@
 import { Server } from "socket.io";
 import db from "../config/db.js";
 import { generateRoomId } from "../utils/generateRoomId.js";
+import { releaseConnection } from "../helpers/releaseConnection.js";
+import { getDBConnection } from "../helpers/getDBConnection.js";
 let io;
 
 export function initSocketServer(httpServer) {
@@ -38,9 +40,8 @@ export function initSocketServer(httpServer) {
 
     socket.on("join-room", (user1, user2) => {
       if (user1 && user2) {
-        
         const roomId = generateRoomId(user1, user2);
-        console.log("roomId--->",roomId);
+        console.log("roomId--->", roomId);
         socket.join(roomId);
 
         socket.emit("room-joined", roomId);
@@ -57,13 +58,19 @@ export function initSocketServer(httpServer) {
           isOnline: true,
         });
       } else {
-        connection = await db.getConnection();
-        const [row] = await connection.query(
-          "SELECT last_seen FROM user WHERE id = ?",
-          [friendId]
-        );
+        connection = await getDBConnection();
+        try {
+          const [row] = await connection.query(
+            "SELECT last_seen FROM user WHERE id = ?",
+            [friendId]
+          );
+        } catch (error) {
+          console.error("Error fetching last seen:", error);
+        } finally {
+          releaseConnection(connection);
+        }
 
-        connection.release();
+        // connection.release();
         socket.emit("user-status-response", {
           friendId,
           isOnline: false,
@@ -76,12 +83,18 @@ export function initSocketServer(httpServer) {
       if (userId) {
         onlineUsers.delete(userId);
 
-        connection = await db.getConnection();
-
-        await connection.query("UPDATE user SET last_seen = ? WHERE id = ?", [
-          new Date(),
-          userId,
-        ]);
+        connection = await getDBConnection();
+        
+      try {
+          await connection.query("UPDATE user SET last_seen = ? WHERE id = ?", [
+            new Date(),
+            userId,
+          ]);
+      } catch (error) {
+        console.error("Error updating last seen on disconnect:", error);
+      }finally{
+        releaseConnection(connection);
+      }
 
         io.emit("user-status-response", {
           friendId: userId,

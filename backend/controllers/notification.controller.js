@@ -1,5 +1,7 @@
 import db from "../config/db.js";
 import { redisClient } from "../config/redis.js";
+import { getDBConnection } from "../helpers/getDBConnection.js";
+import { releaseConnection } from "../helpers/releaseConnection.js";
 const createNotification = async (
   id,
   connection,
@@ -25,7 +27,7 @@ const createNotification = async (
 const fetchAllNotifications = async (req, res) => {
   let connection;
   try {
-    connection = await db.getConnection();
+    connection = await getDBConnection();
     const userId = req.user.userId;
 
     if (!userId) {
@@ -41,7 +43,6 @@ const fetchAllNotifications = async (req, res) => {
 
     if (cachedNotifications.length > 0) {
       const parsedData = cachedNotifications.map(JSON.parse);
-      connection.release();
       return res.status(200).json({ success: true, data: parsedData });
     }
 
@@ -68,12 +69,11 @@ const fetchAllNotifications = async (req, res) => {
 
     return res.status(200).json({ success: true, data: notifications });
   } catch (error) {
-    console.log(error);
     return res
       .status(500)
       .json({ success: false, message: error.message || error });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection)
   }
 };
 
@@ -93,7 +93,7 @@ const deleteNotification = async (req, res) => {
         .json({ success: false, message: "Notification id is required" });
     }
 
-    connection = await db.getConnection();
+    connection = await getDBConnection();
 
     const [result] = await connection.query(
       "DELETE FROM notifications WHERE id = ?",
@@ -101,13 +101,12 @@ const deleteNotification = async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      connection.release();
+      // connection.release();
       return res
         .status(404)
         .json({ success: false, message: "Notification not found" });
     }
 
-    connection.release();
 
     const redisKey = `notifications:${userId}`;
     const userNotifications = await redisClient.lRange(redisKey, 0, -1);
@@ -135,7 +134,7 @@ const deleteNotification = async (req, res) => {
       message: error.message || "Something went wrong",
     });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection)
   }
 };
 

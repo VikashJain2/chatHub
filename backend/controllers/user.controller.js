@@ -1,5 +1,4 @@
 import bcrypt from "bcryptjs";
-import db from "../config/db.js";
 import jwt from "jsonwebtoken";
 import { redisClient } from "../config/redis.js";
 import cloudinary from "../config/cloudinary.js";
@@ -7,6 +6,8 @@ import fs from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import util from "util";
+import { getDBConnection } from "../helpers/getDBConnection.js";
+import { releaseConnection } from "../helpers/releaseConnection.js";
 
 // Promisify file system operations for better async handling
 const unlinkAsync = util.promisify(fs.unlink);
@@ -33,22 +34,9 @@ const cacheUser = async (email, userId, password) => {
   }
 };
 
-// Helper function to safely release database connections
-const releaseConnection = (connection) => {
-  if (connection && typeof connection.release === "function") {
-    connection.release();
-  }
-};
 
-// Helper function to get database connection with error handling
-const getDBConnection = async () => {
-  try {
-    return await db.getConnection();
-  } catch (error) {
-    console.error("Failed to get database connection:", error);
-    throw new Error("Database connection failed");
-  }
-};
+
+
 
 const createUser = async (req, res) => {
   let connection;

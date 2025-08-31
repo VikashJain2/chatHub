@@ -1,12 +1,14 @@
 import db from "../config/db.js";
 import { redisClient } from "../config/redis.js";
+import { getDBConnection } from "../helpers/getDBConnection.js";
+import { releaseConnection } from "../helpers/releaseConnection.js";
 import { createNotification } from "./notification.controller.js";
 import { parse, v4 as uuidv4 } from "uuid";
 const createInvitation = async (req, res) => {
   let connection;
   try {
     const io = req.app.get("io");
-    connection = await db.getConnection();
+    connection = await getDBConnection();
     const { inviteeId } = req.params;
 
     const inviterId = req.user.userId;
@@ -23,7 +25,7 @@ const createInvitation = async (req, res) => {
     );
 
     if (existingUser.length === 0) {
-      connection.release();
+      // connection.release();
       return res
         .status(400)
         .json({ success: false, message: "Invitee User Not Found" });
@@ -35,7 +37,7 @@ const createInvitation = async (req, res) => {
     );
 
     if (existingInvitation.length > 0) {
-      connection.release();
+      // connection.release();
       return res.status(400).json({
         success: false,
         message: "Invitation Already Exist And Pending",
@@ -93,7 +95,7 @@ const createInvitation = async (req, res) => {
       .status(500)
       .json({ success: false, message: error.message || error });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection)
   }
 };
 
@@ -109,7 +111,7 @@ const acceptInvitation = async (req, res) => {
         .json({ success: false, message: "Not Authenticated" });
     }
 
-    connection = await db.getConnection();
+    connection = await getDBConnection();
     await connection.beginTransaction();
 
     const [invitations] = await connection.query(
@@ -118,7 +120,7 @@ const acceptInvitation = async (req, res) => {
     );
 
     if (invitations.length === 0) {
-      connection.release();
+      // connection.release();
       return res.status(404).json({
         success: false,
         message: "Invitation Not Found Or Already Processed",
@@ -138,7 +140,7 @@ const acceptInvitation = async (req, res) => {
 
     if (existingFriends.length > 0) {
       await connection.rollback();
-      connection.release();
+      // connection.release();
       return res.status(400).json({
         success: false,
         message: "You are already friends with this user",
@@ -255,13 +257,12 @@ const acceptInvitation = async (req, res) => {
       .json({ success: true, message: "Invitation Accepted SuccessFully" });
   } catch (error) {
     console.log(error);
-    if (connection) await connection.rollback();
     return res.status(500).json({
       success: false,
       message: error.message || "Failed To Accept Invitation",
     });
   } finally {
-    if (connection) connection.release();
+    releaseConnection(connection)
   }
 };
 

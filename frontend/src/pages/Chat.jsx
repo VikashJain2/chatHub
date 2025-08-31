@@ -12,12 +12,18 @@ import { useSocket } from "../socket/socket";
 import { useDispatch, useSelector } from "react-redux";
 import { updateUser } from "../store/userSlice";
 import toast from "react-hot-toast";
-import { decryptMessage, deriveSharedSecret, encryptMessage } from "../utils/cryptoUtils";
+import {
+  decryptMessage,
+  deriveSharedSecret,
+  encryptMessage,
+} from "../utils/cryptoUtils";
+import { useNavigate } from "react-router-dom";
 
 const ChatApp = () => {
   const user = useSelector((state) => state.user);
   const dispatch = useDispatch();
   const socket = useSocket();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -35,7 +41,12 @@ const ChatApp = () => {
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUser] = useState([]);
   const [sharedSecrets, setSharedSecrets] = useState({});
+  const [isLoggedOut, setIsLoggedOut] = useState(false);
   const [isEncryptionReady, setIsEncryptionReady] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+
   const messagesContainerRef = useRef(null);
   const notificationRef = useRef(null);
   const sidebarRef = useRef(null);
@@ -53,6 +64,7 @@ const ChatApp = () => {
 
   useEffect(() => {
     if (selectedUser && user?.privateKey) {
+      console.log("calliing useEffect for encryption setup");
       const setupEncryption = async () => {
         try {
           const response = await axios.get(
@@ -65,6 +77,8 @@ const ChatApp = () => {
               user.privateKey,
               response.data.publicKey
             );
+
+            console.log("Derived Shared Secret--->", sharedSecret);
 
             setSharedSecrets((prev) => ({
               ...prev,
@@ -92,27 +106,31 @@ const ChatApp = () => {
     };
 
     const handleMessageInserted = async (data) => {
-      console.log("Selected User In useEffect--->",selectedUser)
-      console.log("Shared Secret--->", sharedSecrets)
-    try {
-      const sharedSecret = sharedSecrets[selectedUser.friendId];
+      console.log("Selected User In useEffect--->", selectedUser);
+      console.log("Shared Secret--->", sharedSecrets);
+      try {
+        const sharedSecret = sharedSecrets[selectedUser.friendId];
 
-      const decryptedText = await decryptMessage(data.message, data.iv, sharedSecret);
+        const decryptedText = await decryptMessage(
+          data.message,
+          data.iv,
+          sharedSecret
+        );
 
-      const decryptedMessage = {
-        ...data,
-        message: decryptedText,
-      };
+        const decryptedMessage = {
+          ...data,
+          message: decryptedText,
+        };
 
-      setMessages((prevMessages) => {
-        const exists = prevMessages.some((msg) => msg.id === data.id);
-        if (exists) return prevMessages;
-        return [...prevMessages, decryptedMessage];
-      });
-    } catch (error) {
-      console.error("Failed to decrypt incoming socket message:", error);
-    }
-  };
+        setMessages((prevMessages) => {
+          const exists = prevMessages.some((msg) => msg.id === data.id);
+          if (exists) return prevMessages;
+          return [...prevMessages, decryptedMessage];
+        });
+      } catch (error) {
+        console.error("Failed to decrypt incoming socket message:", error);
+      }
+    };
     socket.on("invite-notification", handleNewNotification);
     socket.on("invite-accepted", handleNewNotification);
     socket.on("message-inserted", handleMessageInserted);
@@ -147,7 +165,7 @@ const ChatApp = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!socket && !selectedUser) return;
+    if (!socket && !selectedUser && !isLoggedOut) return;
     socket.emit("join-room", selectedUser.friendId, user.id);
 
     socket.on("room-joined", (data) => {
@@ -184,14 +202,71 @@ const ChatApp = () => {
     };
   }, []);
 
-  useEffect(() => {});
+  useEffect(() => {
+    if (selectedUser && user.roomId && isEncryptionReady) {
+      setPage(1);
+      setHasMore(true);
+      fetchMessages(1, false);
+    }
+  }, [selectedUser, user.roomId, isEncryptionReady]);
+
+  const loadMoreMessages = () => {
+    if (hasMore && !isLoading) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchMessages(nextPage, true);
+    }
+  };
+  const fetchMessages = async (pageNum, shouldPrepend = false) => {
+    console.log("calling fetch messages");
+    if (!selectedUser || !user.roomId || isLoading) return;
+
+    setIsLoading(true);
+    try {
+      const response = await axios.get(`${BASE_URL}/chat/messages`, {
+        params: {
+          room_id: user.roomId,
+          page: pageNum,
+          limit: 20,
+        },
+        withCredentials: true,
+      });
+
+      if (response.data.success) {
+        const newMessages = response.data.messages;
+        const sharedSecret = sharedSecrets[selectedUser.friendId];
+        const decryptedMessages = await Promise.all(
+          newMessages.map(async (msg) => {
+            const decryptedText = await decryptMessage(
+              msg.message,
+              msg.iv,
+              sharedSecret
+            );
+            return { ...msg, message: decryptedText };
+          })
+        );
+
+        if (shouldPrepend) {
+          setMessages((prev) => [...decryptedMessages, ...prev]);
+        } else {
+          setMessages(decryptedMessages);
+        }
+
+        setHasMore(response.data.hasMore);
+      }
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      toast.error("Failed to load messages");
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const fetchUserFriends = async () => {
     try {
       const response = await axios.get(`${BASE_URL}/user/friends`, {
         withCredentials: true,
       });
       if (response.data.success) {
-        console.log("Fetched user friends:", response.data.data);
         setUsers(response.data.friends);
       } else {
         console.error("Failed to fetch user friends:", response.data.message);
@@ -254,22 +329,6 @@ const ChatApp = () => {
         toast.error("Something went wrong");
       }
     }
-
-    // setUsers((prevUsers) => [...prevUsers, newUser]);
-    // const acceptedNotification = {
-    //   id: notifications.length + 1,
-    //   type: "invitation_sent",
-    //   firstName: notification.firstName,
-    //   lastName: notification.lastName,
-    //   timestamp: new Date().toLocaleTimeString([], {
-    //     hour: "2-digit",
-    //     minute: "2-digit",
-    //   }),
-    // };
-    // setNotifications((prevNotifications) => [
-    //   ...prevNotifications.filter((n) => n.id !== notification.id),
-    //   acceptedNotification,
-    // ]);
   };
 
   const handleEmojiClick = useCallback((emojiObject) => {
@@ -277,56 +336,56 @@ const ChatApp = () => {
     setShowEmojiPicker(false);
   }, []);
 
- const handleSendMessage = useCallback(async () => {
-  if (!newMessage.trim() || !selectedUser || !isEncryptionReady) return;
+  const handleSendMessage = useCallback(async () => {
+    if (!newMessage.trim() || !selectedUser || !isEncryptionReady) return;
 
-  try {
-    const sharedSecret = sharedSecrets[selectedUser.friendId];
+    try {
+      const sharedSecret = sharedSecrets[selectedUser.friendId];
 
-    const { cipherText, iv } = await encryptMessage(newMessage, sharedSecret);
+      const { cipherText, iv } = await encryptMessage(newMessage, sharedSecret);
 
-    const message = {
-      sender_id: user.id,
-      receiver_id: selectedUser.friendId,
-      message: cipherText,
-      room_id: user.roomId,
-      iv: iv,
-    };
+      const message = {
+        sender_id: user.id,
+        receiver_id: selectedUser.friendId,
+        message: cipherText,
+        room_id: user.roomId,
+        iv: iv,
+      };
 
-    const response = await axios.post(`${BASE_URL}/chat/create`, message, {
-      withCredentials: true,
-    });
-
-    if (response.data.success) {
-      const insertedMessage = response.data.insertedMessageInDB;
-      const decryptedMessage = await decryptMessage(
-        insertedMessage.message,
-        insertedMessage.iv,
-        sharedSecret
-      );
-
-      setMessages((prevMessages) => {
-        const existMessages = prevMessages.some(
-          (msg) => msg.id === insertedMessage.id
-        );
-
-        if (!existMessages) {
-          return [...prevMessages, { ...insertedMessage, message: decryptedMessage }];
-        } else {
-          return prevMessages;
-        }
+      const response = await axios.post(`${BASE_URL}/chat/create`, message, {
+        withCredentials: true,
       });
 
+      if (response.data.success) {
+        const insertedMessage = response.data.insertedMessageInDB;
+        const decryptedMessage = await decryptMessage(
+          insertedMessage.message,
+          insertedMessage.iv,
+          sharedSecret
+        );
 
-      console.log("updated Message--->", messages)
+        setMessages((prevMessages) => {
+          const existMessages = prevMessages.some(
+            (msg) => msg.id === insertedMessage.id
+          );
 
-      setNewMessage("");
+          if (!existMessages) {
+            return [
+              ...prevMessages,
+              { ...insertedMessage, message: decryptedMessage },
+            ];
+          } else {
+            return prevMessages;
+          }
+        });
+
+        setNewMessage("");
+      }
+    } catch (error) {
+      console.error("Send message failed:", error);
+      toast.error("Failed to send message");
     }
-  } catch (error) {
-    console.error("Send message failed:", error);
-    toast.error("Failed to send message");
-  }
-}, [newMessage, selectedUser, sharedSecrets, isEncryptionReady, user]);
+  }, [newMessage, selectedUser, sharedSecrets, isEncryptionReady, user]);
 
   const handleSendInvitation = useCallback(async (user) => {
     setInviteInput(user.firstName + user.lastName);
@@ -461,9 +520,13 @@ const ChatApp = () => {
   }, []);
 
   const handleLogout = useCallback(() => {
+    setIsLoggedOut(true);
+    dispatch(updateUser({}));
     setShowLogoutModal(false);
     setSelectedUser(null);
     setIsSidebarOpen(false);
+    navigate("/login");
+    toast.success("Logged Out Successfully");
   }, []);
 
   return (
@@ -542,6 +605,9 @@ const ChatApp = () => {
               messages={messages}
               selectedUser={selectedUser}
               users={users}
+              loadMore={loadMoreMessages}
+              hasMore={hasMore}
+              isLoading={isLoading}
             />
 
             <MessageInput

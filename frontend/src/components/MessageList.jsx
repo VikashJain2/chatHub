@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 // Utility function to format timestamp
@@ -17,7 +17,8 @@ const formatTimestamp = (timestamp) => {
   }
 };
 
-const MessageList = ({ messages, selectedUser, users }) => {
+const MessageList = ({ messages, selectedUser, users, loadMore, hasMore, isLoading }) => {
+  const [isOnTop, setIsOnTop] = useState(false);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const myDetails = useSelector((state) => state.user);
@@ -31,13 +32,34 @@ const MessageList = ({ messages, selectedUser, users }) => {
     }
   };
 
+   useEffect(() => {
+    const handleScroll = () => {
+      if (messagesContainerRef.current.scrollTop === 0 && hasMore && !isLoading) {
+        setIsOnTop(true)
+        loadMore();
+      }
+    };
+
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [hasMore, isLoading, loadMore]);
+
   useEffect(() => {
+    if(!isOnTop)
     scrollToBottom();
   }, [messages]);
 
 
   return (
     <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 bg-gray-100">
+      {isLoading && (
+        <div className="flex justify-center py-2">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+        </div>
+      )}
       <div className="max-w-3xl mx-auto space-y-4">
         {messages.map((message) => (
           <div
