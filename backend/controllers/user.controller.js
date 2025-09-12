@@ -8,7 +8,6 @@ import { v4 as uuidv4 } from "uuid";
 import util from "util";
 import { getDBConnection } from "../helpers/getDBConnection.js";
 import { releaseConnection } from "../helpers/releaseConnection.js";
-
 // Promisify file system operations for better async handling
 const unlinkAsync = util.promisify(fs.unlink);
 const rmdirAsync = util.promisify(fs.rm);
@@ -33,11 +32,6 @@ const cacheUser = async (email, userId, password) => {
     // Don't throw as caching failures shouldn't break the main flow
   }
 };
-
-
-
-
-
 const createUser = async (req, res) => {
   let connection;
   try {

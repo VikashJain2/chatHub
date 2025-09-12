@@ -1,11 +1,12 @@
 import { v4 as uuidv4 } from "uuid";
 import { getDBConnection } from "../helpers/getDBConnection.js";
 import { releaseConnection } from "../helpers/releaseConnection.js";
+import { uploadToCloudinary } from "../utils/cloudinaryUpload.js";
 const createChat = async (req, res) => {
   let connection;
   try {
     const io = req.app.get("io");
-    const { sender_id, receiver_id, message, iv, room_id } = req.body;
+    const { sender_id, receiver_id, message, iv, room_id, message_type = "text", file_name,file_type } = req.body;
 
     if (!sender_id || !receiver_id || !message || !iv) {
       return res
@@ -18,8 +19,8 @@ const createChat = async (req, res) => {
     connection = await getDBConnection();
 
     const [result] = await connection.query(
-      "INSERT INTO messages (id,sender_id, receiver_id, message, iv, room_id) VALUES (?,?,?,?,?,?)",
-      [id, sender_id, receiver_id, message, iv, room_id]
+      "INSERT INTO messages (id,sender_id, receiver_id, message, iv, room_id, message_type, file_name, file_type) VALUES (?,?,?,?,?,?,?,?,?)",
+      [id, sender_id, receiver_id, message, iv, room_id, message_type, file_name, file_type]
     );
 
     const [insertedMessage] = await connection.query(
@@ -43,6 +44,33 @@ const createChat = async (req, res) => {
     releaseConnection(connection);
   }
 };
+
+const uploadFile = async(req,res)=>{
+  try{
+    if(!req.file){
+      return res.status(400).json({success: false, message: "No File Provided"})
+    }
+    let resourceType = "auto"
+    if(req.file.mimetype.startsWith("image/")){
+      resourceType = "image"
+    }
+    else if(req.file.mimetype.startsWith("video/")){
+      resourceType = "video"
+    }
+    else if(req.file.mimetype.startsWith("audio/")){
+      resourceType = "video"
+    }
+
+    const fileUrl = await uploadToCloudinary(req.file.buffer, "chat_files", resourceType);
+    return res.status(200).json({
+      success: true,
+      message: "File uploaded successfully",
+      fileUrl
+    })
+  }catch(error){
+    return res.status(500).json({success: false, message: error.message || "Internal Server Error"})
+  }
+}
 
 const getMessages = async (req, res) => {
   let connection;
@@ -83,4 +111,4 @@ const getMessages = async (req, res) => {
   }
 };
 
-export { createChat, getMessages };
+export { createChat, getMessages, uploadFile };

@@ -64,18 +64,18 @@ export function initSocketServer(httpServer) {
             "SELECT last_seen FROM user WHERE id = ?",
             [friendId]
           );
-        } catch (error) {
+          // connection.release();
+          socket.emit("user-status-response", {
+            friendId,
+            isOnline: false,
+            lastSeen: row[0].last_seen || null,
+          });
+        }
+ catch (error) {
           console.error("Error fetching last seen:", error);
         } finally {
           releaseConnection(connection);
         }
-
-        // connection.release();
-        socket.emit("user-status-response", {
-          friendId,
-          isOnline: false,
-          lastSeen: row[0].last_seen || null,
-        });
       }
     });
 

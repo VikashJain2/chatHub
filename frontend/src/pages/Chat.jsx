@@ -46,7 +46,8 @@ const ChatApp = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-
+  const [isSelectedUserUpdated, setIsSelectedUserUpdated] = useState(false);
+  const [roomId, setRoomId] = useState("");
   const messagesContainerRef = useRef(null);
   const notificationRef = useRef(null);
   const sidebarRef = useRef(null);
@@ -62,40 +63,46 @@ const ChatApp = () => {
     }
   };
 
-  useEffect(() => {
-    if (selectedUser && user?.privateKey) {
-      console.log("calliing useEffect for encryption setup");
-      const setupEncryption = async () => {
-        try {
-          const response = await axios.get(
-            `${BASE_URL}/user/public-key/${selectedUser.friendId}`,
-            { withCredentials: true }
+ useEffect(() => {
+  if (!selectedUser) {
+    setIsEncryptionReady(false);
+    return;
+  }
+
+  setIsEncryptionReady(false); // 🚀 reset here when user changes
+
+  if (user?.privateKey) {
+    const setupEncryption = async () => {
+      try {
+        const response = await axios.get(
+          `${BASE_URL}/user/public-key/${selectedUser.friendId}`,
+          { withCredentials: true }
+        );
+
+        if (response.data.success) {
+          const sharedSecret = await deriveSharedSecret(
+            user.privateKey,
+            response.data.publicKey
           );
 
-          if (response.data.success) {
-            const sharedSecret = await deriveSharedSecret(
-              user.privateKey,
-              response.data.publicKey
-            );
+          console.log("Derived Shared Secret--->", sharedSecret);
 
-            console.log("Derived Shared Secret--->", sharedSecret);
+          setSharedSecrets((prev) => ({
+            ...prev,
+            [selectedUser.friendId]: sharedSecret,
+          }));
 
-            setSharedSecrets((prev) => ({
-              ...prev,
-              [selectedUser.friendId]: sharedSecret,
-            }));
-
-            setIsEncryptionReady(true);
-          }
-        } catch (error) {
-          console.log("Error setting up encryption:", error);
-          toast.error("Could not establish secure connection");
+          setIsEncryptionReady(true); // 🚀 only true after new secret
         }
-      };
+      } catch (error) {
+        console.log("Error setting up encryption:", error);
+        toast.error("Could not establish secure connection");
+      }
+    };
 
-      setupEncryption();
-    }
-  }, [selectedUser, user?.privateKey]);
+    setupEncryption();
+  }
+}, [selectedUser, user?.privateKey]);
 
   useEffect(() => {
     if (!socket) {
@@ -165,13 +172,29 @@ const ChatApp = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!socket && !selectedUser && !isLoggedOut) return;
+    console.log("My Selected User ===> ", selectedUser);
+  }, [selectedUser]);
+
+  useEffect(() => {
+    if (!socket || !selectedUser || isLoggedOut) return;
+    setMessages([]);
+    setPage(1);
+    setHasMore(true);
+    setRoomId("");
+    setIsEncryptionReady(false)
     socket.emit("join-room", selectedUser.friendId, user.id);
 
-    socket.on("room-joined", (data) => {
-      dispatch(updateUser({ roomId: data }));
-    });
-  }, [selectedUser]);
+    const handleRoomJoined = (data) => {
+      setRoomId(data);
+        setIsSelectedUserUpdated(prev => !prev);
+    };
+
+    socket.on("room-joined", handleRoomJoined);
+
+    return () => {
+      socket.off("room-joined", handleRoomJoined);
+    };
+  }, [socket, selectedUser, user.id, isLoggedOut]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -203,15 +226,21 @@ const ChatApp = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedUser && user.roomId && isEncryptionReady) {
+    if (selectedUser && roomId && isEncryptionReady) {
+      console.log("Calling the Fetch Use Effect==<");
+      console.log("isSelectedUserUpdated===>", isSelectedUserUpdated);
       setPage(1);
       setHasMore(true);
       fetchMessages(1, false);
     }
-  }, [selectedUser, user.roomId, isEncryptionReady]);
+  }, [selectedUser, roomId, isSelectedUserUpdated, isEncryptionReady]);
 
+  useEffect(() => {
+    setMessages([]);
+  }, [selectedUser]);
   const loadMoreMessages = () => {
     if (hasMore && !isLoading) {
+      console.log("Calling Load More");
       const nextPage = page + 1;
       setPage(nextPage);
       fetchMessages(nextPage, true);
@@ -219,13 +248,13 @@ const ChatApp = () => {
   };
   const fetchMessages = async (pageNum, shouldPrepend = false) => {
     console.log("calling fetch messages");
-    if (!selectedUser || !user.roomId || isLoading) return;
-
+    if (!selectedUser || !roomId || isLoading) return;
+    console.log("Fetch Function Room Id ===> ", roomId);
     setIsLoading(true);
     try {
       const response = await axios.get(`${BASE_URL}/chat/messages`, {
         params: {
-          room_id: user.roomId,
+          room_id: roomId,
           page: pageNum,
           limit: 20,
         },
@@ -337,7 +366,8 @@ const ChatApp = () => {
   }, []);
 
   const handleSendMessage = useCallback(async () => {
-    if (!newMessage.trim() || !selectedUser || !isEncryptionReady) return;
+    if (!newMessage.trim() || !selectedUser || !isEncryptionReady || !roomId)
+      return;
 
     try {
       const sharedSecret = sharedSecrets[selectedUser.friendId];
@@ -348,7 +378,7 @@ const ChatApp = () => {
         sender_id: user.id,
         receiver_id: selectedUser.friendId,
         message: cipherText,
-        room_id: user.roomId,
+        room_id: roomId,
         iv: iv,
       };
 
@@ -385,7 +415,14 @@ const ChatApp = () => {
       console.error("Send message failed:", error);
       toast.error("Failed to send message");
     }
-  }, [newMessage, selectedUser, sharedSecrets, isEncryptionReady, user]);
+  }, [
+    newMessage,
+    selectedUser,
+    sharedSecrets,
+    isEncryptionReady,
+    user,
+    roomId,
+  ]);
 
   const handleSendInvitation = useCallback(async (user) => {
     setInviteInput(user.firstName + user.lastName);
