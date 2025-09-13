@@ -2,6 +2,11 @@ import { v4 as uuidv4 } from "uuid";
 import { getDBConnection } from "../helpers/getDBConnection.js";
 import { releaseConnection } from "../helpers/releaseConnection.js";
 import { uploadToCloudinary } from "../utils/cloudinaryUpload.js";
+import fs from 'fs'
+import util from "util";
+import path from 'path'
+const unlinkAsync = util.promisify(fs.unlink);
+const rmdirAsync = util.promisify(fs.rm);
 const createChat = async (req, res) => {
   let connection;
   try {
@@ -45,32 +50,49 @@ const createChat = async (req, res) => {
   }
 };
 
-const uploadFile = async(req,res)=>{
-  try{
-    if(!req.file){
-      return res.status(400).json({success: false, message: "No File Provided"})
-    }
-    let resourceType = "auto"
-    if(req.file.mimetype.startsWith("image/")){
-      resourceType = "image"
-    }
-    else if(req.file.mimetype.startsWith("video/")){
-      resourceType = "video"
-    }
-    else if(req.file.mimetype.startsWith("audio/")){
-      resourceType = "video"
+const uploadFile = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No File Provided" });
     }
 
-    const fileUrl = await uploadToCloudinary(req.file.buffer, "chat_files", resourceType);
+    console.log("file =>", req.file);
+
+    let resourceType = "auto";
+
+    if (req.file.mimetype.startsWith("image/")) {
+      resourceType = "image";
+    } else if (req.file.mimetype.startsWith("video/")) {
+      resourceType = "video";
+    } else if (req.file.mimetype.startsWith("audio/")) {
+      
+      resourceType = "video";
+    } else {
+      resourceType = "raw";
+    }
+    const fileUrl = await uploadToCloudinary(req.file.path, "chatHub", resourceType, "public");
+ try {
+      await unlinkAsync(req.file.path);
+      const uploadDir = path.dirname(req.file.path);
+      await rmdirAsync(uploadDir, { recursive: true });
+    } catch (cleanupError) {
+      console.warn("File cleanup warning:", cleanupError.message);
+    }
     return res.status(200).json({
       success: true,
       message: "File uploaded successfully",
-      fileUrl
-    })
-  }catch(error){
-    return res.status(500).json({success: false, message: error.message || "Internal Server Error"})
+      fileUrl,
+    });
+  } catch (error) {
+    console.error("Error => ", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
   }
-}
+};
+
+
 
 const getMessages = async (req, res) => {
   let connection;

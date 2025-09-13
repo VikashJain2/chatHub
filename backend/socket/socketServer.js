@@ -41,10 +41,15 @@ export function initSocketServer(httpServer) {
     socket.on("join-room", (user1, user2) => {
       if (user1 && user2) {
         const roomId = generateRoomId(user1, user2);
-        console.log("roomId--->", roomId);
         socket.join(roomId);
 
         socket.emit("room-joined", roomId);
+      }
+    });
+
+    socket.on("leave-room", (roomId) => {
+      if (roomId) {
+        socket.leave(`Socket ${socket.id} left room ${roomId}`);
       }
     });
 
@@ -70,8 +75,7 @@ export function initSocketServer(httpServer) {
             isOnline: false,
             lastSeen: row[0].last_seen || null,
           });
-        }
- catch (error) {
+        } catch (error) {
           console.error("Error fetching last seen:", error);
         } finally {
           releaseConnection(connection);
@@ -84,17 +88,17 @@ export function initSocketServer(httpServer) {
         onlineUsers.delete(userId);
 
         connection = await getDBConnection();
-        
-      try {
+
+        try {
           await connection.query("UPDATE user SET last_seen = ? WHERE id = ?", [
             new Date(),
             userId,
           ]);
-      } catch (error) {
-        console.error("Error updating last seen on disconnect:", error);
-      }finally{
-        releaseConnection(connection);
-      }
+        } catch (error) {
+          console.error("Error updating last seen on disconnect:", error);
+        } finally {
+          releaseConnection(connection);
+        }
 
         io.emit("user-status-response", {
           friendId: userId,

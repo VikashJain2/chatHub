@@ -9,12 +9,15 @@ const MessageInput = ({
   setShowEmojiPicker,
   handleSendMessage,
   handleEmojiClick,
-  handleFileUpload
+  handleFileUpload,
+  isFileUploading
 }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileType, setFileType] = useState('document');
   const [filePreview, setFilePreview] = useState(null);
   const [showFileMenu, setShowFileMenu] = useState(false);
+  const [pdfPages, setPdfPages] = useState([]);
+  const [currentPdfPage, setCurrentPdfPage] = useState(1);
   const fileInputRef = useRef(null);
   const fileMenuRef = useRef(null);
 
@@ -30,7 +33,7 @@ const MessageInput = ({
       type: 'document',
       label: 'Document',
       icon: DocumentTextIcon,
-      accept: '.pdf,.doc,.docx,.txt,.rtf'
+      accept: '.pdf,.doc,.docx,.txt,.rtf,.xls,.xlsx,.ppt,.pptx'
     },
     {
       type: 'audio',
@@ -54,6 +57,54 @@ const MessageInput = ({
     };
   }, []);
 
+  // Load PDF.js for PDF preview
+  useEffect(() => {
+    // Dynamically load PDF.js if not already loaded
+    if (!window.pdfjsLib && selectedFile && selectedFile.type === 'application/pdf' && isFileUploading) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+      script.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        renderPdfPreview();
+      };
+      document.head.appendChild(script);
+    } else if (selectedFile && selectedFile.type === 'application/pdf' && isFileUploading) {
+      renderPdfPreview();
+    }
+  }, [selectedFile]);
+
+  const renderPdfPreview = async () => {
+    if (!selectedFile || selectedFile.type !== 'application/pdf') return;
+    
+    try {
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      // Get the first page for preview
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1.5 });
+      
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+      
+      setFilePreview({ 
+        type: 'pdf', 
+        url: canvas.toDataURL(),
+        totalPages: pdf.numPages 
+      });
+    } catch (error) {
+      console.error('Error rendering PDF preview:', error);
+      setFilePreview({ type: 'document', url: null });
+    }
+  };
+
   const handleFileMenuClick = (option) => {
     setShowFileMenu(false);
     // Set the file input accept attribute based on selection
@@ -73,6 +124,8 @@ const MessageInput = ({
         setFileType('video');
       } else if (file.type.startsWith('audio/')) {
         setFileType('audio');
+      } else if (file.type === 'application/pdf') {
+        setFileType('pdf');
       } else {
         setFileType('document');
       }
@@ -88,6 +141,9 @@ const MessageInput = ({
         reader.readAsDataURL(file);
       } else if (file.type.startsWith('audio/')) {
         setFilePreview({ type: 'audio', url: URL.createObjectURL(file) });
+      } else if (file.type === 'application/pdf') {
+        // PDF preview will be handled by the useEffect
+        setFilePreview({ type: 'pdf', url: null, loading: true });
       } else {
         setFilePreview({ type: 'document', url: null });
       }
@@ -97,6 +153,8 @@ const MessageInput = ({
   const removeFile = () => {
     setSelectedFile(null);
     setFilePreview(null);
+    setPdfPages([]);
+    setCurrentPdfPage(1);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -108,6 +166,16 @@ const MessageInput = ({
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const changePdfPage = (direction) => {
+    if (filePreview.type === 'pdf' && filePreview.totalPages) {
+      const newPage = currentPdfPage + direction;
+      if (newPage >= 1 && newPage <= filePreview.totalPages) {
+        setCurrentPdfPage(newPage);
+        // In a real implementation, you would render the new page here
+      }
+    }
   };
 
   return (
@@ -200,6 +268,64 @@ const MessageInput = ({
               </div>
             )}
             
+            {filePreview?.type === 'pdf' && (
+              <div className="flex flex-col items-center">
+                {filePreview.loading ? (
+                  <div className="flex items-center justify-center h-48 w-full bg-gray-100 rounded-lg">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                    <span className="ml-2 text-gray-600">Loading PDF preview...</span>
+                  </div>
+                ) : filePreview.url ? (
+                  <>
+                    <div className="relative w-full">
+                      <img 
+                        src={filePreview.url} 
+                        alt="PDF preview" 
+                        className="max-h-64 w-full object-contain border border-gray-200 rounded-lg"
+                      />
+                      {filePreview.totalPages > 1 && (
+                        <div className="absolute bottom-2 left-0 right-0 flex justify-center items-center">
+                          <button 
+                            onClick={() => changePdfPage(-1)}
+                            disabled={currentPdfPage <= 1}
+                            className="bg-white rounded-full p-1 shadow-md mr-2 disabled:opacity-50"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                          </button>
+                          <span className="bg-black bg-opacity-70 text-white px-2 py-1 rounded text-sm">
+                            Page {currentPdfPage} of {filePreview.totalPages}
+                          </span>
+                          <button 
+                            onClick={() => changePdfPage(1)}
+                            disabled={currentPdfPage >= filePreview.totalPages}
+                            className="bg-white rounded-full p-1 shadow-md ml-2 disabled:opacity-50"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">{selectedFile.name}</p>
+                    <p className="text-xs text-gray-500">{formatFileSize(selectedFile.size)}</p>
+                  </>
+                ) : (
+                  <div className="flex items-center p-3 bg-gray-100 rounded-lg">
+                    <div className="mr-3 text-blue-600">
+                      <DocumentTextIcon className="w-10 h-10" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
+                      <p className="text-xs text-gray-500">{formatFileSize(selectedFile.size)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
             {filePreview?.type === 'document' && (
               <div className="flex items-center p-3 bg-gray-100 rounded-lg">
                 <div className="mr-3 text-blue-600">
@@ -235,8 +361,11 @@ const MessageInput = ({
             <button
               onClick={() => handleFileUpload(selectedFile, fileType)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+              disabled={isFileUploading}
             >
-              Send
+              {
+                isFileUploading ? "uploading File..." : "send"
+              }
             </button>
           </div>
         </div>

@@ -1,25 +1,25 @@
-import {v2 as cloudinary} from 'cloudinary';
-import stream from 'stream';
+import { v2 as cloudinary } from "cloudinary";
 
-const uploadToCloudinary = async(fileBuffer, folder = "chat_files",  resourceType = "auto") => {
-    return new Promise((resolve, reject) =>{
-        const uploadStream = cloudinary.uploader.upload_stream(
-            {
-                folder: folder,
-                resource_type: resourceType
-            },
-            (error, result) => {
-                if(error){
-                    reject(error)
-                }else{
-                    resolve(result.secure_url)
-                }
-            }
-        );
+const uploadToCloudinary = async (filePath, folder = "chatHub", resourceType = "auto", accessMode) => {
+    console.log("resource_type =>", resourceType)
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload(
+      filePath,
+      {
+        folder,
+        resource_type: resourceType,
+        type: "upload",
+        access_mode: accessMode || "public",
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result.secure_url);
+        }
+      }
+    );
+  });
+};
 
-        const bufferStream = new stream.PassThrough();
-        bufferStream.end(fileBuffer);
-        bufferStream.pipe(uploadStream)
-    })
-}
-export {uploadToCloudinary}
+export { uploadToCloudinary };

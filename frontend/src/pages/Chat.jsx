@@ -46,12 +46,13 @@ const ChatApp = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSelectedUserUpdated, setIsSelectedUserUpdated] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [roomId, setRoomId] = useState("");
   const messagesContainerRef = useRef(null);
   const notificationRef = useRef(null);
   const sidebarRef = useRef(null);
   const searchTimeout = useRef(null);
+  const currentRoomRef = useRef("");
   let BASE_URL = import.meta.env.VITE_BASE_URL;
 
   const scrollToBottom = () => {
@@ -63,46 +64,46 @@ const ChatApp = () => {
     }
   };
 
- useEffect(() => {
-  if (!selectedUser) {
+  useEffect(() => {
+    if (!selectedUser) {
+      setIsEncryptionReady(false);
+      return;
+    }
+
     setIsEncryptionReady(false);
-    return;
-  }
 
-  setIsEncryptionReady(false); // 🚀 reset here when user changes
-
-  if (user?.privateKey) {
-    const setupEncryption = async () => {
-      try {
-        const response = await axios.get(
-          `${BASE_URL}/user/public-key/${selectedUser.friendId}`,
-          { withCredentials: true }
-        );
-
-        if (response.data.success) {
-          const sharedSecret = await deriveSharedSecret(
-            user.privateKey,
-            response.data.publicKey
+    if (user?.privateKey) {
+      const setupEncryption = async () => {
+        try {
+          const response = await axios.get(
+            `${BASE_URL}/user/public-key/${selectedUser.friendId}`,
+            { withCredentials: true }
           );
 
-          console.log("Derived Shared Secret--->", sharedSecret);
+          if (response.data.success) {
+            const sharedSecret = await deriveSharedSecret(
+              user.privateKey,
+              response.data.publicKey
+            );
 
-          setSharedSecrets((prev) => ({
-            ...prev,
-            [selectedUser.friendId]: sharedSecret,
-          }));
+            console.log("Derived Shared Secret--->", sharedSecret);
 
-          setIsEncryptionReady(true); // 🚀 only true after new secret
+            setSharedSecrets((prev) => ({
+              ...prev,
+              [selectedUser.friendId]: sharedSecret,
+            }));
+
+            setIsEncryptionReady(true);
+          }
+        } catch (error) {
+          console.log("Error setting up encryption:", error);
+          toast.error("Could not establish secure connection");
         }
-      } catch (error) {
-        console.log("Error setting up encryption:", error);
-        toast.error("Could not establish secure connection");
-      }
-    };
+      };
 
-    setupEncryption();
-  }
-}, [selectedUser, user?.privateKey]);
+      setupEncryption();
+    }
+  }, [selectedUser, user?.privateKey]);
 
   useEffect(() => {
     if (!socket) {
@@ -113,20 +114,42 @@ const ChatApp = () => {
     };
 
     const handleMessageInserted = async (data) => {
-      console.log("Selected User In useEffect--->", selectedUser);
-      console.log("Shared Secret--->", sharedSecrets);
+      if (
+        !selectedUser ||
+        (data.sender_id !== selectedUser.friendId &&
+          data.receiver_id !== selectedUser.friendId)
+      ) {
+        return;
+      }
       try {
         const sharedSecret = sharedSecrets[selectedUser.friendId];
-
-        const decryptedText = await decryptMessage(
-          data.message,
-          data.iv,
-          sharedSecret
-        );
+        let decryptedText;
+        if (data.message_type === "file") {
+          decryptedText = await decryptMessage(
+            data.message,
+            data.iv,
+            sharedSecret
+          );
+        } else {
+          decryptedText = await decryptMessage(
+            data.message,
+            data.iv,
+            sharedSecret
+          );
+        }
 
         const decryptedMessage = {
           ...data,
           message: decryptedText,
+
+          ...(data.message_type === "file" && {
+            file_data: {
+              url: decryptedText,
+              name: data.file_name,
+              type: data.file_type,
+              size: data?.file_size,
+            },
+          }),
         };
 
         setMessages((prevMessages) => {
@@ -172,27 +195,31 @@ const ChatApp = () => {
   }, [user]);
 
   useEffect(() => {
-    console.log("My Selected User ===> ", selectedUser);
-  }, [selectedUser]);
-
-  useEffect(() => {
     if (!socket || !selectedUser || isLoggedOut) return;
     setMessages([]);
     setPage(1);
     setHasMore(true);
     setRoomId("");
-    setIsEncryptionReady(false)
+    setIsEncryptionReady(false);
+
+    if (currentRoomRef.current) {
+      socket.emit("leave-room", currentRoomRef.current);
+    }
     socket.emit("join-room", selectedUser.friendId, user.id);
 
     const handleRoomJoined = (data) => {
-      setRoomId(data);
-        setIsSelectedUserUpdated(prev => !prev);
+      if (selectedUser && data.includes(selectedUser.friendId)) setRoomId(data);
+      currentRoomRef.current = data;
+      // setIsSelectedUserUpdated((prev) => !prev);
     };
 
     socket.on("room-joined", handleRoomJoined);
 
     return () => {
       socket.off("room-joined", handleRoomJoined);
+      if (currentRoomRef.current) {
+        socket.emit("leave-room", currentRoomRef.current);
+      }
     };
   }, [socket, selectedUser, user.id, isLoggedOut]);
 
@@ -227,13 +254,15 @@ const ChatApp = () => {
 
   useEffect(() => {
     if (selectedUser && roomId && isEncryptionReady) {
-      console.log("Calling the Fetch Use Effect==<");
-      console.log("isSelectedUserUpdated===>", isSelectedUserUpdated);
-      setPage(1);
-      setHasMore(true);
-      fetchMessages(1, false);
+      if (roomId.includes(selectedUser.friendId)) {
+        setPage(1);
+        setHasMore(true);
+        fetchMessages(1, false);
+      } else {
+        console.log("Room Id does not match. Skipping Fetch Function");
+      }
     }
-  }, [selectedUser, roomId, isSelectedUserUpdated, isEncryptionReady]);
+  }, [selectedUser, roomId, isEncryptionReady]);
 
   useEffect(() => {
     setMessages([]);
@@ -247,9 +276,11 @@ const ChatApp = () => {
     }
   };
   const fetchMessages = async (pageNum, shouldPrepend = false) => {
-    console.log("calling fetch messages");
     if (!selectedUser || !roomId || isLoading) return;
-    console.log("Fetch Function Room Id ===> ", roomId);
+    if (!roomId.includes(selectedUser.friendId)) {
+      console.log("Room Id does not match. aborting fetch");
+      return;
+    }
     setIsLoading(true);
     try {
       const response = await axios.get(`${BASE_URL}/chat/messages`, {
@@ -271,7 +302,21 @@ const ChatApp = () => {
               msg.iv,
               sharedSecret
             );
-            return { ...msg, message: decryptedText };
+
+            if (msg.message_type === "file") {
+              return {
+                ...msg,
+                message: decryptedText,
+                file_data: {
+                  url: decryptedText,
+                  name: msg.file_name,
+                  type: msg.file_type,
+                  size: msg?.file_size,
+                },
+              };
+            } else {
+              return { ...msg, message: decryptedText };
+            }
           })
         );
 
@@ -290,6 +335,98 @@ const ChatApp = () => {
       setIsLoading(false);
     }
   };
+
+  const handleFileUpload = useCallback(
+    async (file, fileType) => {
+      if (!selectedUser || !isEncryptionReady || !roomId) return;
+      setUploadingFile(true);
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const uploadResponse = await axios.post(
+          `${BASE_URL}/chat/upload`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+            withCredentials: true, // merged inside same config object
+          }
+        );
+
+        if (uploadResponse.data.success) {
+          const fileUrl = uploadResponse.data.fileUrl;
+          const sharedSecret = sharedSecrets[selectedUser.friendId];
+
+          const { cipherText, iv } = await encryptMessage(
+            fileUrl,
+            sharedSecret
+          );
+          const message = {
+            sender_id: user.id,
+            receiver_id: selectedUser.friendId,
+            message: cipherText,
+            iv: iv,
+            room_id: roomId,
+            message_type: "file",
+            file_name: file.name,
+            file_type: fileType,
+            file_size: file.size,
+          };
+
+          const response = await axios.post(
+            `${BASE_URL}/chat/create`,
+            message,
+            {
+              withCredentials: true,
+            }
+          );
+
+          if (response.data.success) {
+            const insertedMessage = response.data.insertedMessageInDB;
+            const decryptUrl = await decryptMessage(
+              insertedMessage.message,
+              insertedMessage.iv,
+              sharedSecret
+            );
+
+            setMessages((prevMessages) => {
+              const exists = prevMessages.some(
+                (msg) => msg.id === insertedMessage.id
+              );
+              if (!exists) {
+                return [
+                  ...prevMessages,
+                  {
+                    ...insertedMessage,
+                    message: decryptUrl,
+                    file_data: {
+                      url: decryptUrl,
+                      name: insertedMessage.file_name,
+                      type: insertedMessage.file_type,
+                      size: insertedMessage?.file_size,
+                    },
+                  },
+                ];
+              }
+              return prevMessages;
+            });
+
+            setNewMessage("");
+            toast.success("File sent successfully");
+          }
+        }
+      } catch (error) {
+        console.log("Error while uploading file => ", error);
+        toast.error("Error uploading file. Please try again.");
+      } finally {
+        setUploadingFile(false);
+      }
+    },
+    [selectedUser, sharedSecrets, isEncryptionReady, user, roomId]
+  );
   const fetchUserFriends = async () => {
     try {
       const response = await axios.get(`${BASE_URL}/user/friends`, {
@@ -654,6 +791,9 @@ const ChatApp = () => {
               newMessage={newMessage}
               setNewMessage={setNewMessage}
               showEmojiPicker={showEmojiPicker}
+              handleFileUpload={handleFileUpload}
+              isFileUploading= {uploadingFile}
+              
             />
           </>
         ) : (
