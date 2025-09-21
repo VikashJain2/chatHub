@@ -71,9 +71,9 @@ const Sidebar = ({
           </div>
         </div>
         <div className="overflow-y-auto h-[calc(100vh-8rem)]">
-          {users.map((user) => (
+          {users.map((user,index) => (
             <div
-              key={user.id}
+              key={index}
               onClick={() => {
                 setSelectedUser(user);
                 setIsSidebarOpen(false);

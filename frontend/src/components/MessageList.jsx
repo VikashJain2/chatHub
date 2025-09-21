@@ -152,9 +152,9 @@ const MessageList = ({ messages, selectedUser, users, loadMore, hasMore, isLoadi
         </div>
       )}
       <div className="max-w-3xl mx-auto space-y-4">
-        {messages.map((message) => (
+        {messages.map((message, index) => (
           <div
-            key={message.id}
+            key={index}
             className={`flex items-start gap-3 ${message.sender_id === myDetails.id ? 'justify-end' : 'justify-start'}`}
           >
             {message.sender_id !== myDetails.id &&

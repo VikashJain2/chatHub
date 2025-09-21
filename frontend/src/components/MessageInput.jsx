@@ -1,6 +1,8 @@
-import { FaceSmileIcon, PaperClipIcon, XMarkIcon, PhotoIcon, VideoCameraIcon, DocumentTextIcon, MusicalNoteIcon } from '@heroicons/react/24/outline';
+import { FaceSmileIcon, PaperClipIcon, XMarkIcon, PhotoIcon, VideoCameraIcon, DocumentTextIcon, MusicalNoteIcon, SparklesIcon, MicrophoneIcon } from '@heroicons/react/24/outline';
+import axios from 'axios';
 import EmojiPicker, { EmojiStyle } from 'emoji-picker-react';
 import { useState, useRef, useEffect } from 'react';
+import toast from 'react-hot-toast';
 
 const MessageInput = ({
   newMessage,
@@ -18,8 +20,17 @@ const MessageInput = ({
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [pdfPages, setPdfPages] = useState([]);
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isAIGenerating, setIsAIGenerating] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [inputRows, setInputRows] = useState(1);
+  const [isListening, setIsListening] = useState(false);
   const fileInputRef = useRef(null);
   const fileMenuRef = useRef(null);
+  const aiAssistantRef = useRef(null);
+  const textareaRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   // File type options with icons and accept attributes
   const fileTypeOptions = [
@@ -43,11 +54,41 @@ const MessageInput = ({
     }
   ];
 
-  // Handle click outside to close file menu
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setAiPrompt(prev => prev + " " + transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        toast.error('Speech recognition failed. Please try again.');
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+  }, []);
+
+  // Handle click outside to close file menu and AI assistant
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (fileMenuRef.current && !fileMenuRef.current.contains(event.target)) {
         setShowFileMenu(false);
+      }
+      if (aiAssistantRef.current && !aiAssistantRef.current.contains(event.target)) {
+        setShowAIAssistant(false);
       }
     };
 
@@ -56,6 +97,25 @@ const MessageInput = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Adjust textarea height based on content
+  useEffect(() => {
+    if (textareaRef.current) {
+      // Reset height to auto to get the correct scrollHeight
+      textareaRef.current.style.height = 'auto';
+      // Set the height based on scrollHeight with a max of 120px
+      const scrollHeight = textareaRef.current.scrollHeight;
+      const maxHeight = 120;
+      const newHeight = Math.min(scrollHeight, maxHeight);
+      
+      textareaRef.current.style.height = `${newHeight}px`;
+      
+      // Calculate approximate number of rows for padding adjustment
+      const lineHeight = parseInt(getComputedStyle(textareaRef.current).lineHeight);
+      const rows = Math.floor(newHeight / lineHeight);
+      setInputRows(rows);
+    }
+  }, [newMessage]);
 
   // Load PDF.js for PDF preview
   useEffect(() => {
@@ -150,6 +210,11 @@ const MessageInput = ({
     }
   };
 
+  useEffect(()=>{
+    if(isFileUploading === false){
+      removeFile();
+    }
+  },[isFileUploading])
   const removeFile = () => {
     setSelectedFile(null);
     setFilePreview(null);
@@ -178,6 +243,109 @@ const MessageInput = ({
     }
   };
 
+  // Handle Enter key for message input
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+      // Reset textarea height after sending
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        setInputRows(1);
+      }
+    }
+  };
+
+  // Speech to text functions
+  const startListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (error) {
+        console.error('Speech recognition start error:', error);
+        toast.error('Cannot start speech recognition. Please check your microphone permissions.');
+      }
+    } else {
+      toast.error('Speech recognition is not supported in your browser.');
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  };
+
+  // AI Assistant functions
+  const handleAIClick = () => {
+    setShowAIAssistant(!showAIAssistant);
+    // Clear previous suggestions when opening
+    if (!showAIAssistant) {
+      setAiSuggestions([]);
+      setAiPrompt('');
+    }
+  };
+
+  const handleAIGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    
+    setIsAIGenerating(true);
+    
+    try {
+      const response = await axios.post("http://localhost:4000/api/v1/ai/ask", {prompt: aiPrompt}, {withCredentials: true})
+      if(response.data.success){
+        setAiSuggestions(response.data.response)
+      }
+    } catch (error) {
+      toast.error(error.response.data.message)
+    }finally{
+      setIsAIGenerating(false)
+    }
+  };
+
+  const handleAIApply = (suggestion) => {
+    setNewMessage(suggestion);
+    setShowAIAssistant(false);
+    setAiSuggestions([]);
+    setAiPrompt('');
+  };
+
+  const SuggestionItem = ({ suggestion, onApply }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const isLongMessage = suggestion.length > 150;
+    const displayText = isLongMessage && !isExpanded 
+      ? `${suggestion.substring(0, 150)}...` 
+      : suggestion;
+
+    return (
+      <div className="bg-gray-50 rounded-md p-3">
+        <div className="flex flex-col">
+          <p className="text-sm text-gray-700 whitespace-pre-line mb-2 break-words">
+            {displayText}
+            {isLongMessage && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="text-blue-600 hover:text-blue-800 text-xs ml-1 font-medium"
+              >
+                {isExpanded ? ' Show less' : ' Show more'}
+              </button>
+            )}
+          </p>
+          <div className="flex justify-end">
+            <button
+              onClick={() => onApply(suggestion)}
+              className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition-colors"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 border-t border-gray-200 bg-white shadow-lg relative">
       {showEmojiPicker && (
@@ -195,11 +363,109 @@ const MessageInput = ({
         </div>
       )}
       
+      {/* AI Assistant Panel - Updated with microphone icon */}
+      {showAIAssistant && (
+        <div 
+          ref={aiAssistantRef}
+          className="fixed inset-x-0 bottom-20 z-20 bg-white p-4 rounded-t-lg shadow-lg border border-gray-200 md:absolute md:bottom-20 md:right-4 md:w-96 md:rounded-lg"
+          style={{ maxHeight: 'calc(100vh - 120px)' }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium text-gray-800">AI Writing Assistant</h3>
+            <button onClick={() => setShowAIAssistant(false)} className="text-gray-500 hover:text-gray-700">
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="mb-4 relative">
+            <textarea
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="What would you like to say? Or click the mic to speak..."
+              className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 placeholder-gray-400 text-sm h-28 resize-none"
+              disabled={isAIGenerating}
+            />
+            <button
+              onClick={isListening ? stopListening : startListening}
+              className={`absolute right-3 top-3 p-1 rounded-full transition-colors ${
+                isListening 
+                  ? 'bg-red-100 text-red-600 animate-pulse' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+              type="button"
+              disabled={isAIGenerating}
+            >
+              <MicrophoneIcon className="w-5 h-5" />
+            </button>
+            {isListening && (
+              <div className="absolute right-12 top-3 flex items-center">
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-ping mr-1"></div>
+                <span className="text-xs text-red-600">Listening...</span>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end space-x-2 mb-4">
+            <button
+              onClick={handleAIGenerate}
+              disabled={!aiPrompt.trim() || isAIGenerating}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              {isAIGenerating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Generating...
+                </>
+              ) : (
+                'Generate'
+              )}
+            </button>
+          </div>
+          
+          {/* AI Suggestions */}
+          {aiSuggestions.length > 0 && (
+            <div className="mb-4 border-t border-gray-200 pt-4 flex-1 overflow-hidden flex flex-col">
+              <p className="text-xs text-gray-500 mb-2 font-medium">AI Suggestions:</p>
+              <div className="space-y-3 overflow-y-auto flex-1 pr-1 max-h-40 md:max-h-60">
+                {aiSuggestions.map((suggestion, index) => (
+                  <SuggestionItem 
+                    key={index} 
+                    suggestion={suggestion} 
+                    onApply={handleAIApply}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Quick suggestions */}
+          <div className="pt-4 border-t border-gray-200">
+            <p className="text-xs text-gray-500 mb-2 font-medium">Quick templates:</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                "Professional email",
+                "Meeting request", 
+                "Thank you note",
+                "Follow-up message"
+              ].map((template) => (
+                <button
+                  key={template}
+                  onClick={() => setAiPrompt(`write a ${template.toLowerCase()}`)}
+                  className="text-xs p-2 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 truncate"
+                >
+                  {template}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* File Selection Menu */}
       {showFileMenu && (
         <div 
           ref={fileMenuRef}
-          className="absolute bottom-20 left-4 bg-white p-2 rounded-lg shadow-lg border border-gray-200 z-20"
+          className="fixed inset-x-0 bottom-20 bg-white p-2 rounded-t-lg shadow-lg border border-gray-200 z-20 md:absolute md:bottom-20 md:left-4 md:rounded-lg"
         >
           {fileTypeOptions.map((option) => {
             const IconComponent = option.icon;
@@ -219,7 +485,7 @@ const MessageInput = ({
       
       {/* File Preview Modal */}
       {selectedFile && (
-        <div className="absolute bottom-full left-0 right-0 bg-white p-4 border border-gray-200 rounded-lg shadow-lg mb-2 z-20">
+        <div className="fixed inset-x-0 bottom-0 bg-white p-4 border border-gray-200 rounded-t-lg shadow-lg z-20 md:absolute md:bottom-full md:left-0 md:right-0 md:rounded-lg md:mb-2">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-medium text-gray-800">Send {fileType}</h3>
             <button onClick={removeFile} className="text-gray-500 hover:text-gray-700">
@@ -228,7 +494,7 @@ const MessageInput = ({
           </div>
           
           {/* File Preview Content */}
-          <div className="mb-4">
+          <div className="mb-4 max-h-60 overflow-y-auto">
             {filePreview?.type === 'image' && (
               <div className="flex flex-col items-center">
                 <img 
@@ -341,12 +607,15 @@ const MessageInput = ({
           
           {/* Caption Input (optional) */}
           <div className="mb-4">
-            <input
-              type="text"
+            <textarea
+              ref={textareaRef}
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Add a caption..."
-              className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 placeholder-gray-400 text-sm"
+              className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 placeholder-gray-400 text-sm resize-none"
+              rows={1}
+              style={{ minHeight: '40px', maxHeight: '120px' }}
             />
           </div>
           
@@ -363,9 +632,7 @@ const MessageInput = ({
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
               disabled={isFileUploading}
             >
-              {
-                isFileUploading ? "uploading File..." : "send"
-              }
+              {isFileUploading ? "Uploading..." : "Send"}
             </button>
           </div>
         </div>
@@ -395,14 +662,24 @@ const MessageInput = ({
           />
         </div>
         
-        <input
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+          onKeyDown={handleKeyDown}
           placeholder="Type your message..."
-          className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 placeholder-gray-400 text-sm sm:text-base"
+          className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 placeholder-gray-400 text-sm sm:text-base resize-none"
+          rows={1}
+          style={{ minHeight: '48px', maxHeight: '120px' }}
         />
+        
+        {/* AI Assistant Button */}
+        <button
+          onClick={handleAIClick}
+          className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 hover:text-purple-600"
+        >
+          <SparklesIcon className="w-6 h-6" />
+        </button>
         
         <button
           onClick={handleSendMessage}
@@ -412,6 +689,7 @@ const MessageInput = ({
               ? 'bg-blue-600 hover:bg-blue-700 text-white' 
               : 'bg-gray-300 text-gray-500 cursor-not-allowed'
           }`}
+          style={{ alignSelf: inputRows > 1 ? 'flex-end' : 'center' }}
         >
           <span className="hidden sm:inline text-sm">Send</span>
           <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

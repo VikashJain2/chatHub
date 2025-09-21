@@ -11,7 +11,7 @@ const createChat = async (req, res) => {
   let connection;
   try {
     const io = req.app.get("io");
-    const { sender_id, receiver_id, message, iv, room_id, message_type = "text", file_name,file_type } = req.body;
+    const { sender_id, receiver_id, message, iv, room_id, message_type = "text", file_name,file_type, file_size } = req.body;
 
     if (!sender_id || !receiver_id || !message || !iv) {
       return res
@@ -24,8 +24,8 @@ const createChat = async (req, res) => {
     connection = await getDBConnection();
 
     const [result] = await connection.query(
-      "INSERT INTO messages (id,sender_id, receiver_id, message, iv, room_id, message_type, file_name, file_type) VALUES (?,?,?,?,?,?,?,?,?)",
-      [id, sender_id, receiver_id, message, iv, room_id, message_type, file_name, file_type]
+      "INSERT INTO messages (id,sender_id, receiver_id, message, iv, room_id, message_type, file_name, file_type, file_size) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      [id, sender_id, receiver_id, message, iv, room_id, message_type, file_name, file_type, file_size]
     );
 
     const [insertedMessage] = await connection.query(
