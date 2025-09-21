@@ -364,20 +364,20 @@ const MessageInput = ({
       )}
       
       {/* AI Assistant Panel - Updated with microphone icon */}
-      {showAIAssistant && (
+   {showAIAssistant && (
         <div 
           ref={aiAssistantRef}
-          className="fixed inset-x-0 bottom-20 z-20 bg-white p-4 rounded-t-lg shadow-lg border border-gray-200 md:absolute md:bottom-20 md:right-4 md:w-96 md:rounded-lg"
-          style={{ maxHeight: 'calc(100vh - 120px)' }}
+          className="fixed inset-x-0 bottom-20 z-20 bg-white p-4 rounded-t-lg shadow-lg border border-gray-200 md:absolute md:bottom-20 md:right-4 md:w-96 md:rounded-lg flex flex-col"
+          style={{ maxHeight: 'calc(100vh - 120px)', height: 'auto' }}
         >
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 flex-shrink-0">
             <h3 className="font-medium text-gray-800">AI Writing Assistant</h3>
             <button onClick={() => setShowAIAssistant(false)} className="text-gray-500 hover:text-gray-700">
               <XMarkIcon className="w-5 h-5" />
             </button>
           </div>
           
-          <div className="mb-4 relative">
+          <div className="mb-4 relative flex-shrink-0">
             <textarea
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
@@ -405,7 +405,7 @@ const MessageInput = ({
             )}
           </div>
           
-          <div className="flex justify-end space-x-2 mb-4">
+          <div className="flex justify-end space-x-2 mb-4 flex-shrink-0">
             <button
               onClick={handleAIGenerate}
               disabled={!aiPrompt.trim() || isAIGenerating}
@@ -422,24 +422,46 @@ const MessageInput = ({
             </button>
           </div>
           
-          {/* AI Suggestions */}
+          {/* AI Suggestions with proper scrolling */}
           {aiSuggestions.length > 0 && (
-            <div className="mb-4 border-t border-gray-200 pt-4 flex-1 overflow-hidden flex flex-col">
+            <div className="mb-4 border-t border-gray-200 pt-4 flex-1 overflow-hidden">
               <p className="text-xs text-gray-500 mb-2 font-medium">AI Suggestions:</p>
-              <div className="space-y-3 overflow-y-auto flex-1 pr-1 max-h-40 md:max-h-60">
+              <div className="space-y-3 overflow-y-auto max-h-40 md:max-h-48 pr-1">
                 {aiSuggestions.map((suggestion, index) => (
-                  <SuggestionItem 
-                    key={index} 
-                    suggestion={suggestion} 
-                    onApply={handleAIApply}
-                  />
+                  <div key={index} className="bg-gray-50 rounded-md p-3">
+                    <div className="flex flex-col">
+                      <p className="text-sm text-gray-700 whitespace-pre-line mb-2 break-words">
+                        {suggestion.length > 120 ? `${suggestion.substring(0, 120)}...` : suggestion}
+                        {suggestion.length > 120 && (
+                          <button
+                            onClick={() => {
+                              const newSuggestions = [...aiSuggestions];
+                              newSuggestions[index] = suggestion;
+                              setAiSuggestions(newSuggestions);
+                            }}
+                            className="text-blue-600 hover:text-blue-800 text-xs ml-1 font-medium"
+                          >
+                            Show more
+                          </button>
+                        )}
+                      </p>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => handleAIApply(suggestion)}
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition-colors"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
           )}
           
-          {/* Quick suggestions */}
-          <div className="pt-4 border-t border-gray-200">
+          {/* Quick suggestions - Always visible at the bottom */}
+          <div className="pt-4 border-t border-gray-200 flex-shrink-0">
             <p className="text-xs text-gray-500 mb-2 font-medium">Quick templates:</p>
             <div className="grid grid-cols-2 gap-2">
               {[
